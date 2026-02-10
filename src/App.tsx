@@ -9,23 +9,23 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
  *    2) Upload CSV
  * - Events grid auto-generates all days of selected month
  * - Editing any cell updates calendar instantly
- * - Data persists in localStorage
  *
- * Features:
- * 1) Login required (2 accounts)
- * 2) Year restricted between 1990 and 2030
+ * FINAL CHANGES DONE:
+ * 1) After login → always load CURRENT month/year
+ * 2) Landing page shows ONLY Events/Calendar table
+ * 3) Events header (blue) is sticky
+ * 4) Tabs (Event Calendar / Events) sticky at bottom ONLY in landing page
+ * 5) Add Event button is inside Events header (right side)
+ * 6) Add Event page shows ONLY import section (no tables, no tabs)
  */
 
 const MIN_YEAR = 1990;
 const MAX_YEAR = 2030;
 
-
-
 interface Session {
   username: string;
   token: string;
 }
-
 
 interface EventData {
   [key: string]: string;
@@ -46,8 +46,6 @@ interface ParsedRow {
   [key: string]: string;
 }
 
-
-
 const MONTHS: string[] = [
   "January",
   "February",
@@ -64,7 +62,6 @@ const MONTHS: string[] = [
 ];
 
 const EVENT_COLS: string[] = Array.from({ length: 10 }, (_, i) => `Event ${i + 1}`);
-
 const DOW: string[] = ["MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
 function pad2(n: number): string {
@@ -100,10 +97,6 @@ function buildMonthRows(year: number, monthIndex: number): MonthRow[] {
     });
   }
   return rows;
-}
-
-function toLocalKey(year: number, monthIndex: number): string {
-  return `events_${year}_${monthIndex + 1}`;
 }
 
 function parseCSV(text: string): ParsedRow[] {
@@ -228,11 +221,7 @@ function mergeImportedIntoMonth(
     if (!target) return;
 
     EVENT_COLS.forEach((c) => {
-      if (
-        row[c] !== undefined &&
-        row[c] !== null &&
-        String(row[c]).trim() !== ""
-      ) {
+      if (row[c] !== undefined && row[c] !== null && String(row[c]).trim() !== "") {
         target.events[c] = String(row[c]).trim();
       }
     });
@@ -241,7 +230,10 @@ function mergeImportedIntoMonth(
   return Array.from(map.values());
 }
 
-function buildCalendarGrid(year: number, monthIndex: number): (CalendarCell | null)[][] {
+function buildCalendarGrid(
+  year: number,
+  monthIndex: number
+): (CalendarCell | null)[][] {
   const total = daysInMonth(year, monthIndex);
   const first = new Date(year, monthIndex, 1);
   const firstIdx = mondayBasedIndex(first.getDay());
@@ -282,16 +274,14 @@ function classNames(...xs: (string | boolean | undefined)[]): string {
 ======================= */
 export default function App(): JSX.Element {
   const [session, setSession] = useState<Session | null>(() => {
-  const saved = localStorage.getItem("makonis_session");
-  if (!saved) return null;
+    const saved = localStorage.getItem("makonis_session");
+    if (!saved) return null;
 
-const parsed = JSON.parse(saved);
-if (!parsed.token) return null;
+    const parsed = JSON.parse(saved);
+    if (!parsed.token) return null;
 
-return parsed;
-
-});
-
+    return parsed;
+  });
 
   function handleLogout(): void {
     localStorage.removeItem("makonis_session");
@@ -318,41 +308,40 @@ function LoginPage({ onLogin }: LoginPageProps): JSX.Element {
   const [error, setError] = useState<string>("");
 
   async function submit(e: React.FormEvent<HTMLFormElement>): Promise<void> {
-  e.preventDefault();
-  setError("");
+    e.preventDefault();
+    setError("");
 
-  try {
-    const res = await fetch("http://127.0.0.1:5000/auth/login", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        username: username.trim(),
-        password,
-      }),
-    });
+    try {
+      const res = await fetch("http://127.0.0.1:5000/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          username: username.trim(),
+          password,
+        }),
+      });
 
-    if (!res.ok) {
-      const err = await res.json();
-      setError(err.error || "Login failed");
-      return;
+      if (!res.ok) {
+        const err = await res.json();
+        setError(err.error || "Login failed");
+        return;
+      }
+
+      const data = await res.json();
+
+      const session: Session = {
+        username: data.username,
+        token: data.token,
+      };
+
+      localStorage.setItem("makonis_session", JSON.stringify(session));
+      onLogin(session);
+    } catch (err) {
+      setError("Server not reachable");
     }
-
-    const data = await res.json();
-
-    const session: Session = {
-      username: data.username,
-      token: data.token,
-    };
-
-    localStorage.setItem("makonis_session", JSON.stringify(session));
-    onLogin(session);
-  } catch (err) {
-    setError("Server not reachable");
   }
-}
-
 
   return (
     <div className="min-h-screen bg-[#f6f7fb] flex items-center justify-center px-4">
@@ -367,9 +356,7 @@ function LoginPage({ onLogin }: LoginPageProps): JSX.Element {
 
         <form onSubmit={submit} className="mt-6 space-y-3">
           <div>
-            <label className="text-xs font-semibold text-slate-700">
-              Username
-            </label>
+            <label className="text-xs font-semibold text-slate-700">Username</label>
             <input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -379,15 +366,13 @@ function LoginPage({ onLogin }: LoginPageProps): JSX.Element {
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-slate-700">
-              Password
-            </label>
+            <label className="text-xs font-semibold text-slate-700">Password</label>
             <input
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               type="password"
               className="mt-1 h-11 w-full rounded-xl border bg-white px-3 text-sm outline-none"
-              placeholder="admin123 "
+              placeholder="admin123"
             />
           </div>
 
@@ -403,8 +388,6 @@ function LoginPage({ onLogin }: LoginPageProps): JSX.Element {
           >
             Login
           </button>
-
-         
         </form>
       </div>
     </div>
@@ -421,69 +404,57 @@ interface MainAppProps {
 
 function MainApp({ session, onLogout }: MainAppProps): JSX.Element {
   const now = new Date();
-
   const safeYear = Math.min(Math.max(now.getFullYear(), MIN_YEAR), MAX_YEAR);
 
   const [tab, setTab] = useState<"events" | "calendar">("events");
   const [year, setYear] = useState<number>(safeYear);
   const [monthIndex, setMonthIndex] = useState<number>(now.getMonth());
 
-  // const storageKey = useMemo(
-  //   () => toLocalKey(year, monthIndex),
-  //   [year, monthIndex]
-  // );
+  // landing = show tables
+  // addEvent = show ONLY import UI
+  const [page, setPage] = useState<"landing" | "addEvent">("landing");
 
-  const [rows, setRows] = useState<MonthRow[]>(
-  buildMonthRows(year, monthIndex)
-);
-
-
+  const [rows, setRows] = useState<MonthRow[]>(buildMonthRows(year, monthIndex));
   const [selectedDateISO, setSelectedDateISO] = useState<string>(() =>
-    isoDate(year, monthIndex, now.getDate())
+    isoDate(year, monthIndex, 1)
   );
 
   const [pasteText, setPasteText] = useState<string>("");
   const fileRef = useRef<HTMLInputElement>(null);
 
- useEffect(() => {
-  async function loadMonth() {
-  try {
-    const res = await fetch(
-      `http://127.0.0.1:5000/events/month?year=${year}&month=${monthIndex + 1}`,
-      {
-        headers: {
-          Authorization: `Bearer ${session.token}`,
-        },
+  useEffect(() => {
+    async function loadMonth() {
+      try {
+        const res = await fetch(
+          `http://127.0.0.1:5000/events/month?year=${year}&month=${monthIndex + 1}`,
+          {
+            headers: {
+              Authorization: `Bearer ${session.token}`,
+            },
+          }
+        );
+
+        if (!res.ok) throw new Error("Failed to load events");
+
+        const data = await res.json();
+        const base = buildMonthRows(year, monthIndex);
+
+        base.forEach((r) => {
+          if (data[r.dateISO]) {
+            r.events = { ...r.events, ...data[r.dateISO] };
+          }
+        });
+
+        setRows(base);
+        setSelectedDateISO(isoDate(year, monthIndex, 1));
+      } catch (e) {
+        console.error(e);
+        setRows(buildMonthRows(year, monthIndex));
       }
-    );
+    }
 
-    if (!res.ok) throw new Error("Failed to load events");
-
-    const data = await res.json();
-    const base = buildMonthRows(year, monthIndex);
-
-    base.forEach((r) => {
-      if (data[r.dateISO]) {
-        r.events = { ...r.events, ...data[r.dateISO] };
-      }
-    });
-
-    setRows(base);
-    setSelectedDateISO(isoDate(year, monthIndex, 1));
-  } catch (e) {
-    console.error(e);
-    setRows(buildMonthRows(year, monthIndex));
-  }
-}
-
-
-  loadMonth();
-}, [year, monthIndex, session.token]);
-
-
-  // useEffect(() => {
-  //   localStorage.setItem(storageKey, JSON.stringify(rows));
-  // }, [rows, storageKey]);
+    loadMonth();
+  }, [year, monthIndex, session.token]);
 
   const eventsByDate = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -496,110 +467,88 @@ function MainApp({ session, onLogout }: MainAppProps): JSX.Element {
     return map;
   }, [rows]);
 
-  const calendarWeeks = useMemo(
-    () => buildCalendarGrid(year, monthIndex),
-    [year, monthIndex]
-  );
+  const calendarWeeks = useMemo(() => buildCalendarGrid(year, monthIndex), [year, monthIndex]);
 
-  async function updateCell(
-  dateISO: string,
-  col: string,
-  value: string
-): Promise<void> {
-  const eventCol = Number(col.replace("Event ", ""));
+  async function updateCell(dateISO: string, col: string, value: string): Promise<void> {
+    const eventCol = Number(col.replace("Event ", ""));
 
-  setRows((prev) =>
-    prev.map((r) =>
-      r.dateISO === dateISO
-        ? { ...r, events: { ...r.events, [col]: value } }
-        : r
-    )
-  );
+    setRows((prev) =>
+      prev.map((r) =>
+        r.dateISO === dateISO ? { ...r, events: { ...r.events, [col]: value } } : r
+      )
+    );
 
-  await fetch("http://127.0.0.1:5000/events/cell", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${session.token}`,
-    },
-    body: JSON.stringify({
-      dateISO,
-      eventCol,
-      value,
-    }),
-  });
-}
-
-
- async function clearMonth(): Promise<void> {
-  if (!confirm("Clear ALL events for this month?")) return;
-
-  await fetch(
-    `http://127.0.0.1:5000/events/month?year=${year}&month=${monthIndex + 1}`,
-    {
-      method: "DELETE",
+    await fetch("http://127.0.0.1:5000/events/cell", {
+      method: "POST",
       headers: {
+        "Content-Type": "application/json",
         Authorization: `Bearer ${session.token}`,
       },
-    }
-  );
-
-  setRows(buildMonthRows(year, monthIndex));
-}
-
-async function bulkUpload(rowsToUpload: MonthRow[]) {
-  const payload = {
-    year,
-    month: monthIndex + 1,
-    rows: rowsToUpload.map((r) => ({
-      dateISO: r.dateISO,
-      events: Object.fromEntries(
-        Object.entries(r.events).filter(
-          ([_, v]) => v && v.trim() !== ""
-        )
-      ),
-    })),
-  };
-
-  await fetch("http://127.0.0.1:5000/events/bulk", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${session.token}`,
-    },
-    body: JSON.stringify(payload),
-  });
-}
-
- async function applyPaste(): Promise<void> {
-  if (!pasteText.trim()) return;
-
-  const tsv = parseTSV(pasteText);
-  const csv = parseCSV(pasteText);
-  const incoming = tsv.length >= 1 ? tsv : csv;
-
-  if (!incoming.length) {
-    alert("No data detected.");
-    return;
+      body: JSON.stringify({
+        dateISO,
+        eventCol,
+        value,
+      }),
+    });
   }
 
-  // optimistic UI update
-  const merged = mergeImportedIntoMonth(
-    buildMonthRows(year, monthIndex),
-    incoming,
-    year,
-    monthIndex
-  );
+  async function clearMonth(): Promise<void> {
+    if (!confirm("Clear ALL events for this month?")) return;
 
-  setRows(merged);
-  setPasteText("");
+    await fetch(
+      `http://127.0.0.1:5000/events/month?year=${year}&month=${monthIndex + 1}`,
+      {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${session.token}`,
+        },
+      }
+    );
 
-  // persist to backend
-  await bulkUpload(merged);
+    setRows(buildMonthRows(year, monthIndex));
+  }
 
-  alert("Imported & saved successfully!");
-}
+  async function bulkUpload(rowsToUpload: MonthRow[]) {
+    const payload = {
+      year,
+      month: monthIndex + 1,
+      rows: rowsToUpload.map((r) => ({
+        dateISO: r.dateISO,
+        events: Object.fromEntries(Object.entries(r.events).filter(([_, v]) => v && v.trim() !== "")),
+      })),
+    };
 
+    await fetch("http://127.0.0.1:5000/events/bulk", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async function applyPaste(): Promise<void> {
+    if (!pasteText.trim()) return;
+
+    const tsv = parseTSV(pasteText);
+    const csv = parseCSV(pasteText);
+    const incoming = tsv.length >= 1 ? tsv : csv;
+
+    if (!incoming.length) {
+      alert("No data detected.");
+      return;
+    }
+
+    const merged = mergeImportedIntoMonth(buildMonthRows(year, monthIndex), incoming, year, monthIndex);
+
+    setRows(merged);
+    setPasteText("");
+
+    await bulkUpload(merged);
+
+    alert("Imported & saved successfully!");
+  }
 
   async function onUploadFile(e: React.ChangeEvent<HTMLInputElement>): Promise<void> {
     const file = e.target.files?.[0];
@@ -612,25 +561,17 @@ async function bulkUpload(rowsToUpload: MonthRow[]) {
       alert("Invalid CSV file.");
       return;
     }
-    const merged = mergeImportedIntoMonth(
-  buildMonthRows(year, monthIndex),
-  incoming,
-  year,
-  monthIndex
-);
 
-setRows(merged);
-await bulkUpload(merged);
-alert("CSV imported & saved!");
+    const merged = mergeImportedIntoMonth(buildMonthRows(year, monthIndex), incoming, year, monthIndex);
 
-    // setRows((prev) => mergeImportedIntoMonth(prev, incoming, year, monthIndex));
+    setRows(merged);
+    await bulkUpload(merged);
+    alert("CSV imported & saved!");
+
     if (fileRef.current) fileRef.current.value = "";
-    // alert("CSV Imported successfully!");
   }
 
-  const headerTitle = useMemo(() => {
-    return `${MONTHS[monthIndex]} ${year}`;
-  }, [monthIndex, year]);
+  const headerTitle = useMemo(() => `${MONTHS[monthIndex]} ${year}`, [monthIndex, year]);
 
   function handleYearChange(rawValue: string): void {
     const n = Number(rawValue || MIN_YEAR);
@@ -648,9 +589,7 @@ alert("CSV imported & saved!");
             <div className="flex items-center gap-3">
               <div className="h-9 w-9 rounded-xl bg-[#0b5cad]" />
               <div>
-                <div className="text-sm font-semibold">
-                  Makoni's Trade Intelligence
-                </div>
+                <div className="text-sm font-semibold">Makoni's Trade Intelligence</div>
                 <div className="text-xs text-slate-500">
                   Logged in as <b>{session.username}</b>
                 </div>
@@ -687,9 +626,7 @@ alert("CSV imported & saved!");
                   onClick={() => setTab("events")}
                   className={classNames(
                     "h-10 w-full rounded-lg px-4 text-sm font-semibold sm:w-auto",
-                    tab === "events"
-                      ? "bg-[#0b5cad] text-white"
-                      : "bg-slate-100"
+                    tab === "events" ? "bg-[#0b5cad] text-white" : "bg-slate-100"
                   )}
                 >
                   Events
@@ -699,9 +636,7 @@ alert("CSV imported & saved!");
                   onClick={() => setTab("calendar")}
                   className={classNames(
                     "h-10 w-full rounded-lg px-4 text-sm font-semibold sm:w-auto",
-                    tab === "calendar"
-                      ? "bg-[#0b5cad] text-white"
-                      : "bg-slate-100"
+                    tab === "calendar" ? "bg-[#0b5cad] text-white" : "bg-slate-100"
                   )}
                 >
                   Event Calendar
@@ -721,105 +656,115 @@ alert("CSV imported & saved!");
 
       {/* Main */}
       <div className="mx-auto max-w-7xl px-4 py-6">
-        {/* Import Row */}
-        <div className="mb-5 grid gap-4 rounded-2xl border bg-white p-4 lg:grid-cols-3">
-          <div className="lg:col-span-2">
-            <div className="mb-2 text-sm font-semibold">
-              Add data (Paste template)
-            </div>
-            <textarea
-              value={pasteText}
-              onChange={(e) => setPasteText(e.target.value)}
-              placeholder={`Paste copied table from Google Sheets (Date + Event 1..Event 10)\n\nExample:\nDate\tEvent 1\tEvent 2\n10-Feb-2026\tMeeting\tCall`}
-              className="h-28 w-full resize-none rounded-xl border bg-white p-3 text-sm outline-none"
-            />
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-2">
-              <button
-                onClick={applyPaste}
-                className="w-full rounded-xl bg-[#0b5cad] px-4 py-2 text-sm font-semibold text-white sm:w-auto"
-              >
-                Import Paste
-              </button>
-              <button
-                onClick={() => setPasteText("")}
-                className="w-full rounded-xl bg-slate-100 px-4 py-2 text-sm font-semibold sm:w-auto"
-              >
-                Clear
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <div className="mb-2 text-sm font-semibold">Upload CSV</div>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".csv"
-              onChange={onUploadFile}
-              className="w-full rounded-xl border bg-white p-2 text-sm"
-            />
-
-            <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
-              <div className="font-semibold text-slate-800">
-                CSV columns required:
-              </div>
-              <div>Date, Event 1, Event 2, … Event 10</div>
-              <div className="mt-2">
-                Only the selected month data will be applied.
-              </div>
-            </div>
-
-            <button
-              onClick={clearMonth}
-              className="mt-4 w-full rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white"
-            >
-              Clear Month Data
-            </button>
-          </div>
-        </div>
-
-        {/* CONTENT */}
-        {tab === "events" ? (
-          <EventsSheet
-            headerTitle={headerTitle}
-            rows={rows}
-            selectedDateISO={selectedDateISO}
-            setSelectedDateISO={setSelectedDateISO}
-            updateCell={updateCell}
-          />
+        {/* ✅ LANDING PAGE = TABLES */}
+        {page === "landing" ? (
+          <>
+            {tab === "events" ? (
+              <EventsSheet
+                headerTitle={headerTitle}
+                rows={rows}
+                selectedDateISO={selectedDateISO}
+                setSelectedDateISO={setSelectedDateISO}
+                updateCell={updateCell}
+                onAddEvent={() => setPage("addEvent")}
+              />
+            ) : (
+              <CalendarSheet
+                headerTitle={headerTitle}
+                year={year}
+                monthIndex={monthIndex}
+                weeks={calendarWeeks}
+                selectedDateISO={selectedDateISO}
+                setSelectedDateISO={setSelectedDateISO}
+                eventsByDate={eventsByDate}
+              />
+            )}
+          </>
         ) : (
-          <CalendarSheet
-            headerTitle={headerTitle}
-            year={year}
-            monthIndex={monthIndex}
-            weeks={calendarWeeks}
-            selectedDateISO={selectedDateISO}
-            setSelectedDateISO={setSelectedDateISO}
-            eventsByDate={eventsByDate}
-          />
+          <>
+            {/* ✅ ADD EVENT PAGE = ONLY IMPORT UI */}
+            <div className="mb-5 grid gap-4 rounded-2xl border bg-white p-4 lg:grid-cols-3">
+              <div className="lg:col-span-2">
+                <div className="mb-2 text-sm font-semibold">Add data (Paste template)</div>
+                <textarea
+                  value={pasteText}
+                  onChange={(e) => setPasteText(e.target.value)}
+                  placeholder={`Paste copied table from Google Sheets (Date + Event 1..Event 10)\n\nExample:\nDate\tEvent 1\tEvent 2\n10-Feb-2026\tMeeting\tCall`}
+                  className="h-28 w-full resize-none rounded-xl border bg-white p-3 text-sm outline-none"
+                />
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-2">
+                  <button
+                    onClick={applyPaste}
+                    className="w-full rounded-xl bg-[#0b5cad] px-4 py-2 text-sm font-semibold text-white sm:w-auto"
+                  >
+                    Import Paste
+                  </button>
+                  <button
+                    onClick={() => setPasteText("")}
+                    className="w-full rounded-xl bg-slate-100 px-4 py-2 text-sm font-semibold sm:w-auto"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-2 text-sm font-semibold">Upload CSV</div>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".csv"
+                  onChange={onUploadFile}
+                  className="w-full rounded-xl border bg-white p-2 text-sm"
+                />
+
+                <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
+                  <div className="font-semibold text-slate-800">CSV columns required:</div>
+                  <div>Date, Event 1, Event 2, … Event 10</div>
+                  <div className="mt-2">Only the selected month data will be applied.</div>
+                </div>
+
+                <button
+                  onClick={clearMonth}
+                  className="mt-4 w-full rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white"
+                >
+                  Clear Month Data
+                </button>
+
+                <button
+                  onClick={() => setPage("landing")}
+                  className="mt-3 w-full rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+                >
+                  Back
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </div>
 
-      {/* Bottom sheet-like tabs */}
-      <div className="sticky bottom-0 z-40 border-t bg-white">
-        <div className="mx-auto max-w-7xl px-4 py-2">
-          <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-2">
-            <SheetTab
-              active={tab === "calendar"}
-              onClick={() => setTab("calendar")}
-            >
-              Event Calendar
-            </SheetTab>
-            <SheetTab active={tab === "events"} onClick={() => setTab("events")}>
-              Events
-            </SheetTab>
+      {/* ✅ Bottom tabs ONLY in landing page */}
+      {page === "landing" && (
+        <div className="sticky bottom-0 z-40 border-t bg-white">
+          <div className="mx-auto max-w-7xl px-4 py-2">
+            {/* <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-2">
+              <SheetTab active={tab === "calendar"} onClick={() => setTab("calendar")}>
+                Event Calendar
+              </SheetTab>
+              <SheetTab active={tab === "events"} onClick={() => setTab("events")}>
+                Events
+              </SheetTab>
+            </div> */}
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
 
+/* =======================
+   SMALL COMPONENTS
+======================= */
 interface SheetTabProps {
   active: boolean;
   children: React.ReactNode;
@@ -840,34 +785,54 @@ function SheetTab({ active, children, onClick }: SheetTabProps): JSX.Element {
   );
 }
 
+/* =======================
+   EVENTS TABLE
+======================= */
 interface EventsSheetProps {
   headerTitle: string;
   rows: MonthRow[];
   selectedDateISO: string;
   setSelectedDateISO: (dateISO: string) => void;
   updateCell: (dateISO: string, col: string, value: string) => void;
+  onAddEvent: () => void;
 }
-
 function EventsSheet({
   headerTitle,
   rows,
   selectedDateISO,
   setSelectedDateISO,
   updateCell,
+  onAddEvent,
 }: EventsSheetProps): JSX.Element {
   return (
     <div className="overflow-hidden rounded-2xl border bg-white">
-      <div className="border-b bg-[#1f3b57] px-4 py-3 text-sm font-semibold text-white">
-        Events — {headerTitle}
-      </div>
+      {/* ✅ STICKY BLUE HEADER */}
+      <div className="sticky top-0 z-40 border-b bg-[#1f3b57] h-[56px] px-4 flex items-center">
+  <div className="flex w-full items-center justify-between">
+    <div className="text-sm font-semibold text-white">
+      Events — {headerTitle}
+    </div>
 
-      <div className="overflow-auto">
+    <button
+      onClick={onAddEvent}
+      className="rounded-lg bg-white/15 px-4 py-2 text-xs font-semibold text-white hover:bg-white/25"
+    >
+      Add Event
+    </button>
+  </div>
+</div>
+
+
+      {/* ✅ TABLE SCROLL ONLY INSIDE */}
+      <div className="overflow-auto max-h-[70vh]">
         <table className="min-w-[1400px] border-collapse">
           <thead>
-            <tr className="bg-[#2f5f49] text-white">
-              <th className="sticky left-0 z-20 min-w-[140px] border border-white/10 px-3 py-3 text-left text-sm">
+            {/* ✅ STICKY GREEN HEADER */}
+           <tr className="sticky top-0 z-30 bg-[#2f5f49] text-white">
+              <th className="sticky left-0 z-40 min-w-[140px] border border-white/10 px-3 py-3 text-left text-sm bg-[#2f5f49]">
                 Date
               </th>
+
               {EVENT_COLS.map((c) => (
                 <th
                   key={c}
@@ -882,6 +847,7 @@ function EventsSheet({
           <tbody>
             {rows.map((r) => {
               const isSelected = r.dateISO === selectedDateISO;
+
               return (
                 <tr
                   key={r.dateISO}
@@ -905,7 +871,9 @@ function EventsSheet({
                       <input
                         value={r.events[c]}
                         onFocus={() => setSelectedDateISO(r.dateISO)}
-                        onChange={(e) => updateCell(r.dateISO, c, e.target.value)}
+                        onChange={(e) =>
+                          updateCell(r.dateISO, c, e.target.value)
+                        }
                         className="h-10 w-full bg-transparent px-3 text-sm outline-none"
                         placeholder=""
                       />
@@ -921,6 +889,10 @@ function EventsSheet({
   );
 }
 
+
+/* =======================
+   CALENDAR TABLE
+======================= */
 interface CalendarSheetProps {
   headerTitle: string;
   year: number;
@@ -951,9 +923,7 @@ function CalendarSheet({
           <div className="border-b bg-[#274b6d] px-4 py-2 text-xs font-semibold text-white">
             Month
           </div>
-          <div className="px-4 py-2 text-sm font-semibold">
-            {MONTHS[monthIndex]}
-          </div>
+          <div className="px-4 py-2 text-sm font-semibold">{MONTHS[monthIndex]}</div>
         </div>
         <div className="lg:col-span-3">
           <div className="border-b bg-[#274b6d] px-4 py-2 text-xs font-semibold text-white">
@@ -969,10 +939,7 @@ function CalendarSheet({
           <thead>
             <tr className="bg-[#274b6d] text-white">
               {DOW.map((d) => (
-                <th
-                  key={d}
-                  className="border border-white/10 px-3 py-3 text-left text-xs"
-                >
+                <th key={d} className="border border-white/10 px-3 py-3 text-left text-xs">
                   {d}
                 </th>
               ))}
@@ -983,9 +950,7 @@ function CalendarSheet({
             {weeks.map((week, wi) => (
               <tr key={wi}>
                 {week.map((cell, ci) => {
-                  if (!cell) {
-                    return <td key={ci} className="h-20 border bg-slate-50" />;
-                  }
+                  if (!cell) return <td key={ci} className="h-20 border bg-slate-50" />;
 
                   const isSelected = cell.dateISO === selectedDateISO;
                   const list = eventsByDate.get(cell.dateISO) || [];
@@ -1005,11 +970,7 @@ function CalendarSheet({
 
                       <div className="px-3 pb-2 pt-1 text-[11px] leading-4">
                         {list.length === 0 ? (
-                          <div
-                            className={classNames(
-                              isSelected ? "text-white/70" : "text-slate-400"
-                            )}
-                          >
+                          <div className={classNames(isSelected ? "text-white/70" : "text-slate-400")}>
                             —
                           </div>
                         ) : (
@@ -1026,11 +987,7 @@ function CalendarSheet({
                               </div>
                             ))}
                             {list.length > 3 && (
-                              <div
-                                className={classNames(
-                                  isSelected ? "text-white/80" : "text-slate-500"
-                                )}
-                              >
+                              <div className={classNames(isSelected ? "text-white/80" : "text-slate-500")}>
                                 +{list.length - 3} more
                               </div>
                             )}
@@ -1047,8 +1004,7 @@ function CalendarSheet({
       </div>
 
       <div className="border-t bg-slate-50 px-4 py-3 text-xs text-slate-600">
-        Tip: Click any calendar date → then go to <b>Events</b> tab and edit Event
-        1..10. Calendar updates instantly.
+        Tip: Click any calendar date → then go to <b>Events</b> tab and edit Event 1..10. Calendar updates instantly.
       </div>
     </div>
   );
