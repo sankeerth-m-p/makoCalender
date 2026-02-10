@@ -1,9 +1,11 @@
 import React, { useState } from "react";
 import App from "./App";
 import LoginPage from "./LoginPage";
+import RegisterPage from "./RegisterPage";
 
-type Session = {
+export type Session = {
   username: string;
+  token: string;
 };
 
 const AppWrapper: React.FC = () => {
@@ -12,16 +14,42 @@ const AppWrapper: React.FC = () => {
     return saved ? (JSON.parse(saved) as Session) : null;
   });
 
+  const [showRegister, setShowRegister] = useState<boolean>(false);
 
-  if (!session) {
-    return <LoginPage onLogin={(user: Session) => setSession(user)} />;
+  function handleLogin(newSession: Session) {
+    setSession(newSession);
   }
 
-  return (
-    <div>
-      <App />
-    </div>
-  );
+  function handleRegister() {
+    setShowRegister(false);
+  }
+
+  function handleLogout() {
+    localStorage.removeItem("makonis_session");
+    setSession(null);
+  }
+
+  // ✅ Show login/register screens if session not present
+  if (!session) {
+    if (showRegister) {
+      return (
+        <RegisterPage
+          onRegister={handleRegister}
+          onShowLogin={() => setShowRegister(false)}
+        />
+      );
+    }
+
+    return (
+      <LoginPage
+        onLogin={handleLogin}
+        onShowRegister={() => setShowRegister(true)}
+      />
+    );
+  }
+
+  // ✅ After login show main App
+  return <App session={session} onLogout={handleLogout} />;
 };
 
 export default AppWrapper;

@@ -1,7 +1,4 @@
-import React, { useState, FormEvent, ChangeEvent } from "react";
-
-
-
+import React, { useState } from "react";
 
 interface Session {
   username: string;
@@ -10,56 +7,59 @@ interface Session {
 
 type LoginPageProps = {
   onLogin: (session: Session) => void;
+  onShowRegister: () => void;
 };
 
-const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
+export default function LoginPage({ onLogin, onShowRegister }: LoginPageProps) {
   const [username, setUsername] = useState<string>("");
   const [password, setPassword] = useState<string>("");
   const [error, setError] = useState<string>("");
 
-   async function submit(e: React.FormEvent<HTMLFormElement>): Promise<void> {
-   e.preventDefault();
-   setError("");
- 
-   try {
-     const res = await fetch("http://127.0.0.1:5000/auth/login", {
-       method: "POST",
-       headers: {
-         "Content-Type": "application/json",
-       },
-       body: JSON.stringify({
-         username: username.trim(),
-         password,
-       }),
-     });
- 
-     if (!res.ok) {
-       const err = await res.json();
-       setError(err.error || "Login failed");
-       return;
-     }
- 
-     const data = await res.json();
- 
-     const session: Session = {
-       username: data.username,
-       token: data.token,
-     };
- 
-     localStorage.setItem("makonis_session", JSON.stringify(session));
-     onLogin(session);
-   } catch (err) {
-     setError("Server not reachable");
-   }
- }
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError("");
 
-  const handleUsernameChange = (e: ChangeEvent<HTMLInputElement>) => {
-    setUsername(e.target.value);
-  };
+    try {
+      // 🔥 API call (optional)
+      // const res = await fetch("http://127.0.0.1:5000/auth/login", {
+      //   method: "POST",
+      //   headers: { "Content-Type": "application/json" },
+      //   body: JSON.stringify({
+      //     username: username.trim(),
+      //     password,
+      //   }),
+      // });
 
-  const handlePasswordChange = (e: ChangeEvent<HTMLInputElement>) => {
-    setPassword(e.target.value);
-  };
+      // if (!res.ok) {
+      //   const err = await res.json();
+      //   setError(err.error || "Login failed");
+      //   return;
+      // }
+
+      // const data = await res.json();
+
+      // ✅ Dummy login (your example style)
+      const data = {
+        username: username.trim(),
+        token: "dummy_token_123",
+      };
+
+      if (!username.trim() || !password.trim()) {
+        setError("Username and password are required.");
+        return;
+      }
+
+      const session: Session = {
+        username: data.username,
+        token: data.token,
+      };
+
+      localStorage.setItem("makonis_session", JSON.stringify(session));
+      onLogin(session);
+    } catch (err) {
+      setError("Server not reachable");
+    }
+  }
 
   return (
     <div className="min-h-screen bg-[#f6f7fb] flex items-center justify-center px-4">
@@ -81,7 +81,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
             </label>
             <input
               value={username}
-              onChange={handleUsernameChange}
+              onChange={(e) => setUsername(e.target.value)}
               autoComplete="off"
               name="no-username"
               className="mt-1 h-11 w-full rounded-xl border bg-white px-3 text-sm outline-none"
@@ -95,7 +95,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
             </label>
             <input
               value={password}
-              onChange={handlePasswordChange}
+              onChange={(e) => setPassword(e.target.value)}
               type="password"
               autoComplete="new-password"
               name="no-password"
@@ -116,10 +116,19 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
           >
             Login
           </button>
+
+          <div className="text-center text-xs text-slate-500">
+            Don't have an account?{" "}
+            <button
+              type="button"
+              onClick={onShowRegister}
+              className="font-semibold text-[#0b5cad]"
+            >
+              Register
+            </button>
+          </div>
         </form>
       </div>
     </div>
   );
-};
-
-export default LoginPage;
+}
