@@ -953,18 +953,6 @@ function MonthView({
                     isSelected ? 'bg-blue-50' : 'bg-white hover:bg-slate-50'
                   }`}
                 >
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onAddEvent(cell.dateISO);
-                    }}
-                    className="absolute top-1 right-1 h-6 w-6 rounded-full border border-blue-200 bg-white text-blue-600 opacity-0 transition-opacity hover:bg-blue-50 group-hover:opacity-100 focus:opacity-100"
-                    aria-label={`Add event for ${cell.dateISO}`}
-                  >
-                    +
-                  </button>
-
                   <div
                     className={`text-xs mb-1 inline-flex items-center justify-center w-6 h-6 rounded-full ${
                       isToday ? 'bg-blue-600 text-white font-bold' : 'text-slate-600'
@@ -973,15 +961,30 @@ function MonthView({
                     {cell.day}
                   </div>
 
-                  <div className="mt-1 max-h-27 space-y-1 overflow-y-auto pr-1 text-xs">
-                    {events.map((ev, idx) => (
-                      <div
-                        key={idx}
-                        className="min-h-5 bg-blue-100 text-blue-800 px-2 py-0.5 rounded truncate"
+                  <div className="mt-1">
+                    <div className="max-h-24 space-y-1 overflow-y-auto pr-1 text-xs">
+                      {events.map((ev, idx) => (
+                        <div
+                          key={idx}
+                          className="min-h-5 bg-blue-100 text-blue-800 px-2 py-0.5 rounded truncate"
+                        >
+                          {ev}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-1 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onAddEvent(cell.dateISO);
+                        }}
+                        className="h-7 w-full rounded-md border border-blue-200 bg-blue-50 text-sm font-semibold text-blue-700 opacity-0 transition-opacity hover:bg-blue-100 group-hover:opacity-100 focus:opacity-100"
+                        aria-label={`Add event for ${cell.dateISO}`}
                       >
-                        {ev}
-                      </div>
-                    ))}
+                        + 
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
