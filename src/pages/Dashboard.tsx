@@ -484,17 +484,17 @@ function downloadExcel() {
       {/* Import Modal */}
       {showImportModal && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm bg-opacity-50 flex items-center justify-center z-50"
           onClick={() => setShowImportModal(false)}
         >
           <div
-            className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-auto shadow-xl"
+            className="bg-white rounded-lg w-full max-w-2xl shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-6 py-4 border-b border-slate-200">
               <h2 className="text-xl font-semibold text-slate-800">Import Events</h2>
             </div>
-            <div className="p-6 space-y-6">
+           <div className="p-4 space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">
                   Paste Template Data
