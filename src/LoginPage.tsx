@@ -20,7 +20,6 @@ export default function LoginPage({ onLogin, onShowRegister }: LoginPageProps) {
     setError("");
 
     try {
-      // 🔥 API call (optional)
       const res = await fetch("https://backend-m7hv.onrender.com/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

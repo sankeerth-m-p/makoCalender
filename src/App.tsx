@@ -1,22 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- * Google-Sheet style Events + Calendar (React single-file app - TypeScript)
- * - 10 Event columns
- * - Month selection ONLY (no date picker)
- * - Add data by:
- *    1) Paste template table (TSV)  OR
- *    2) Upload CSV
- * - Events grid auto-generates all days of selected month
- * - Editing any cell updates calendar instantly
- *
- * FINAL CHANGES DONE:
- * 1) After login → always load CURRENT month/year
- * 2) Landing page shows ONLY Events/Calendar table
- * 3) Events header (blue) is sticky
- * 4) Tabs (Event Calendar / Events) sticky at bottom ONLY in landing page
- * 5) Add Event button is inside Events header (right side)
- * 6) Add Event page shows ONLY import section (no tables, no tabs)
+ * makoCalendar - Google Calendar Style Events Manager
+ * Redesigned with Tailwind CSS and blue/slate theme
  */
 
 const MIN_YEAR = 1990;
@@ -62,7 +48,8 @@ const MONTHS: string[] = [
 ];
 
 const EVENT_COLS: string[] = Array.from({ length: 10 }, (_, i) => `Event ${i + 1}`);
-const DOW: string[] = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+const DOW: string[] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DOW_SHORT: string[] = ["S", "M", "T", "W", "T", "F", "S"];
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
@@ -79,11 +66,6 @@ function niceCellDate(y: number, mIndex: number, d: number): string {
 
 function daysInMonth(year: number, monthIndex: number): number {
   return new Date(year, monthIndex + 1, 0).getDate();
-}
-
-function mondayBasedIndex(jsDay: number): number {
-  if (jsDay === 0) return 6;
-  return jsDay - 1;
 }
 
 function buildMonthRows(year: number, monthIndex: number): MonthRow[] {
@@ -236,7 +218,7 @@ function buildCalendarGrid(
 ): (CalendarCell | null)[][] {
   const total = daysInMonth(year, monthIndex);
   const first = new Date(year, monthIndex, 1);
-  const firstIdx = mondayBasedIndex(first.getDay());
+  const firstDay = first.getDay();
 
   const weeks: (CalendarCell | null)[][] = [];
   let day = 1;
@@ -246,7 +228,7 @@ function buildCalendarGrid(
 
     for (let col = 0; col < 7; col++) {
       const absolutePos = w * 7 + col;
-      const shouldPlace = absolutePos >= firstIdx && day <= total;
+      const shouldPlace = absolutePos >= firstDay && day <= total;
 
       if (shouldPlace) {
         week.push({
@@ -260,18 +242,14 @@ function buildCalendarGrid(
     }
 
     weeks.push(week);
+    if (day > total) break;
   }
 
   return weeks;
 }
 
-
-function classNames(...xs: (string | boolean | undefined)[]): string {
-  return xs.filter(Boolean).join(" ");
-}
-
 /* =======================
-   MAIN APP (AFTER LOGIN)
+   MAIN APP
 ======================= */
 interface AppProps {
   session: Session;
@@ -282,61 +260,60 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
   const now = new Date();
   const safeYear = Math.min(Math.max(now.getFullYear(), MIN_YEAR), MAX_YEAR);
 
-  const [tab, setTab] = useState<"events" | "calendar">("events");
+  const [view, setView] = useState<"month" | "week" | "events">("month");
   const [year, setYear] = useState<number>(safeYear);
   const [monthIndex, setMonthIndex] = useState<number>(now.getMonth());
-const [yearInput, setYearInput] = useState<string>(String(safeYear));
 
-  // landing = show tables
-  // addEvent = show ONLY import UI
-  const [page, setPage] = useState<"landing" | "addEvent">("landing");
+  const [showEventModal, setShowEventModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [editingDate, setEditingDate] = useState<string>("");
+  const [editingEventCol, setEditingEventCol] = useState<string>("Event 1");
 
   const [rows, setRows] = useState<MonthRow[]>(buildMonthRows(year, monthIndex));
   const [selectedDateISO, setSelectedDateISO] = useState<string>(() =>
-    isoDate(year, monthIndex, 1)
+    now.toISOString().split('T')[0]
   );
 
   const [pasteText, setPasteText] = useState<string>("");
   const fileRef = useRef<HTMLInputElement>(null);
-useEffect(() => {
-  setRows(buildMonthRows(year, monthIndex));
-  setSelectedDateISO(isoDate(year, monthIndex, 1));
-}, [year, monthIndex]);
-useEffect(() => {
-  setYearInput(String(year));
-}, [year]);
+
+  const [miniMonthIndex, setMiniMonthIndex] = useState<number>(now.getMonth());
+  const [miniYear, setMiniYear] = useState<number>(safeYear);
 
   useEffect(() => {
-  async function loadMonth() {
-    try {
-      const res = await fetch(
-        `https://backend-m7hv.onrender.com/events/month?year=${year}&month=${monthIndex + 1}`,
-        {
-          headers: {
-            Authorization: `Bearer ${session.token}`,
-          },
-        }
-      );
+    setRows(buildMonthRows(year, monthIndex));
+  }, [year, monthIndex]);
 
-      if (!res.ok) throw new Error("Failed to load events");
+  useEffect(() => {
+    async function loadMonth() {
+      try {
+        const res = await fetch(
+          `https://backend-m7hv.onrender.com/events/month?year=${year}&month=${monthIndex + 1}`,
+          {
+            headers: {
+              Authorization: `Bearer ${session.token}`,
+            },
+          }
+        );
 
-      const data = await res.json();
+        if (!res.ok) throw new Error("Failed to load events");
 
-      setRows((prev) =>
-        prev.map((r) =>
-          data[r.dateISO]
-            ? { ...r, events: { ...r.events, ...data[r.dateISO] } }
-            : r
-        )
-      );
-    } catch (e) {
-      console.error(e);
+        const data = await res.json();
+
+        setRows((prev) =>
+          prev.map((r) =>
+            data[r.dateISO]
+              ? { ...r, events: { ...r.events, ...data[r.dateISO] } }
+              : r
+          )
+        );
+      } catch (e) {
+        console.error(e);
+      }
     }
-  }
 
-  loadMonth();
-}, [year, monthIndex, session.token]);
-
+    loadMonth();
+  }, [year, monthIndex, session.token]);
 
   const eventsByDate = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -350,6 +327,7 @@ useEffect(() => {
   }, [rows]);
 
   const calendarWeeks = useMemo(() => buildCalendarGrid(year, monthIndex), [year, monthIndex]);
+  const miniCalendarWeeks = useMemo(() => buildCalendarGrid(miniYear, miniMonthIndex), [miniYear, miniMonthIndex]);
 
   async function updateCell(dateISO: string, col: string, value: string): Promise<void> {
     const eventCol = Number(col.replace("Event ", ""));
@@ -437,6 +415,7 @@ useEffect(() => {
     await bulkUpload(merged);
 
     alert("Imported & saved successfully!");
+    setShowImportModal(false);
   }
 
   async function onUploadFile(e: React.ChangeEvent<HTMLInputElement>): Promise<void> {
@@ -463,151 +442,415 @@ useEffect(() => {
     alert("CSV imported & saved!");
 
     if (fileRef.current) fileRef.current.value = "";
+    setShowImportModal(false);
   }
 
-  const headerTitle = useMemo(() => `${MONTHS[monthIndex]} ${year}`, [monthIndex, year]);
+  function goToToday() {
+    const today = new Date();
+    const todayISO = today.toISOString().split('T')[0];
+    setYear(today.getFullYear());
+    setMonthIndex(today.getMonth());
+    setMiniYear(today.getFullYear());
+    setMiniMonthIndex(today.getMonth());
+    setSelectedDateISO(todayISO);
+  }
 
-  // function handleYearChange(rawValue: string): void {
-  //   const n = Number(rawValue || MIN_YEAR);
-  //   const clamped = Math.min(Math.max(n, MIN_YEAR), MAX_YEAR);
-  //   setYear(clamped);
-  // }
+  function prevMonth() {
+    if (monthIndex === 0) {
+      setMonthIndex(11);
+      setYear(year - 1);
+    } else {
+      setMonthIndex(monthIndex - 1);
+    }
+  }
+
+  function nextMonth() {
+    if (monthIndex === 11) {
+      setMonthIndex(0);
+      setYear(year + 1);
+    } else {
+      setMonthIndex(monthIndex + 1);
+    }
+  }
+
+  function openEventModal(dateISO: string) {
+    setEditingDate(dateISO);
+    setShowEventModal(true);
+  }
+
+  function saveEventFromModal() {
+    const value = (document.getElementById('eventInput') as HTMLInputElement)?.value || '';
+    if (value.trim()) {
+      updateCell(editingDate, editingEventCol, value);
+    }
+    setShowEventModal(false);
+  }
+
+  const today = new Date().toISOString().split('T')[0];
+  const selectedEvents = eventsByDate.get(selectedDateISO) || [];
 
   return (
-    <div className="min-h-screen bg-[#f6f7fb] text-slate-900">
-      {/* Top Bar */}
-      <div className="sticky top-0 z-50 border-b bg-white">
-        <div className="mx-auto max-w-7xl px-4 py-3">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            {/* Left: Brand */}
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-xl bg-[#0b5cad]" />
-              <div>
-                <div className="text-sm font-semibold">Makoni's Trade Intelligence</div>
-                <div className="text-xs text-slate-500">
-                  Logged in as <b>{session.username}</b>
-                </div>
-              </div>
-            </div>
+    <div className="min-h-screen bg-slate-50">
+      {/* Header */}
+      <div className="bg-slate-700 border-b border-slate-600 px-6 py-3 shadow-md">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          {/* Left - App name and navigation */}
+          <div className="flex items-center gap-6 flex-wrap">
+            <h1 className="text-2xl font-semibold text-white">makoCalendar</h1>
 
-            {/* Right: Controls */}
-            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-              <div className="flex gap-2">
-                <select
-                  value={monthIndex}
-                  onChange={(e) => setMonthIndex(Number(e.target.value))}
-                  className="h-10 w-full rounded-lg border bg-white px-3 text-sm sm:w-[170px]"
-                >
-                  {MONTHS.map((m, idx) => (
-                    <option key={m} value={idx}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-
-                <input
-  type="number"
-  value={yearInput}
-  min={MIN_YEAR}
-  max={MAX_YEAR}
-  onChange={(e) => setYearInput(e.target.value)}
-  onBlur={() => {
-    const n = Number(yearInput);
-    if (!Number.isNaN(n)) {
-      const clamped = Math.min(Math.max(n, MIN_YEAR), MAX_YEAR);
-      setYear(clamped);
-      setYearInput(String(clamped));
-    }
-  }}
-  onKeyDown={(e) => {
-    if (e.key === "Enter") e.currentTarget.blur();
-  }}
-  className="h-10 w-full rounded-lg border bg-white px-3 text-sm sm:w-28"
-/>
-
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-2">
-                <button
-                  onClick={() => setTab("events")}
-                  className={classNames(
-                    "h-10 w-full rounded-lg px-4 text-sm font-semibold sm:w-auto",
-                    tab === "events" ? "bg-[#0b5cad] text-white" : "bg-slate-100"
-                  )}
-                >
-                  Events
-                </button>
-
-                <button
-                  onClick={() => setTab("calendar")}
-                  className={classNames(
-                    "h-10 w-full rounded-lg px-4 text-sm font-semibold sm:w-auto",
-                    tab === "calendar" ? "bg-[#0b5cad] text-white" : "bg-slate-100"
-                  )}
-                >
-                  Event Calendar
-                </button>
-              </div>
-
+            <div className="flex gap-2 items-center flex-wrap">
               <button
-                onClick={onLogout}
-                className="h-10 w-full rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white sm:w-auto"
+                onClick={goToToday}
+                className="px-4 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded transition-colors text-sm font-medium"
               >
-                Logout
+                Today
+              </button>
+              <button
+                onClick={prevMonth}
+                className="px-3 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded transition-colors"
+              >
+                ←
+              </button>
+              <button
+                onClick={nextMonth}
+                className="px-3 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded transition-colors"
+              >
+                →
               </button>
             </div>
+          </div>
+
+          {/* Right - User info and logout */}
+          <div className="flex items-center gap-4">
+            <span className="text-slate-200 text-sm">
+              {session.username}
+            </span>
+            <button
+              onClick={onLogout}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded transition-colors text-sm font-medium"
+            >
+              Logout
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Main */}
-      <div className="mx-auto max-w-7xl px-4 py-6">
-        {/* ✅ LANDING PAGE = TABLES */}
-        {page === "landing" ? (
-          <>
-            {tab === "events" ? (
-              <EventsSheet
-                headerTitle={headerTitle}
-                rows={rows}
-                selectedDateISO={selectedDateISO}
-                setSelectedDateISO={setSelectedDateISO}
-                updateCell={updateCell}
-                onAddEvent={() => setPage("addEvent")}
+      {/* Date Selector Bar */}
+      <div className="bg-white border-b border-slate-200 px-6 py-4 shadow-sm">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-slate-700">Month:</label>
+              <select
+                value={monthIndex}
+                onChange={(e) => setMonthIndex(Number(e.target.value))}
+                className="px-3 py-2 border border-slate-300 rounded-md bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                {MONTHS.map((m, idx) => (
+                  <option key={idx} value={idx}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-slate-700">Year:</label>
+              <input
+                type="number"
+                min={MIN_YEAR}
+                max={MAX_YEAR}
+                value={year}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  if (val >= MIN_YEAR && val <= MAX_YEAR) {
+                    setYear(val);
+                  }
+                }}
+                className="w-24 px-3 py-2 border border-slate-300 rounded-md bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
+            </div>
+
+            <div className="text-lg font-semibold text-slate-800 ml-4">
+              {MONTHS[monthIndex]} {year}
+            </div>
+          </div>
+
+          <div className="flex gap-1">
+            <button
+              onClick={() => setView('month')}
+              className={`px-4 py-2 text-sm font-medium transition-colors ${
+                view === 'month'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              } rounded-l-md border border-slate-300`}
+            >
+              Month
+            </button>
+            <button
+              onClick={() => setView('week')}
+              className={`px-4 py-2 text-sm font-medium transition-colors ${
+                view === 'week'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              } border-t border-b border-slate-300`}
+            >
+              Week
+            </button>
+            <button
+              onClick={() => setView('events')}
+              className={`px-4 py-2 text-sm font-medium transition-colors ${
+                view === 'events'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              } rounded-r-md border border-slate-300`}
+            >
+              Events
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="flex h-[calc(100vh-140px)]">
+        {/* Sidebar */}
+        <div className="w-80 bg-white border-r border-slate-200 p-4 overflow-y-auto">
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium shadow-md transition-all mb-6 flex items-center justify-center gap-2"
+          >
+            <span className="text-xl">+</span>
+            Import Events
+          </button>
+
+          {/* Mini Calendar */}
+          <div className="mb-6">
+            <div className="flex justify-between items-center mb-3">
+              <div className="text-sm font-semibold text-slate-700">
+                {MONTHS[miniMonthIndex]} {miniYear}
+              </div>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => {
+                    if (miniMonthIndex === 0) {
+                      setMiniMonthIndex(11);
+                      setMiniYear(miniYear - 1);
+                    } else {
+                      setMiniMonthIndex(miniMonthIndex - 1);
+                    }
+                  }}
+                  className="w-7 h-7 flex items-center justify-center hover:bg-slate-100 rounded transition-colors text-slate-600"
+                >
+                  ←
+                </button>
+                <button
+                  onClick={() => {
+                    if (miniMonthIndex === 11) {
+                      setMiniMonthIndex(0);
+                      setMiniYear(miniYear + 1);
+                    } else {
+                      setMiniMonthIndex(miniMonthIndex + 1);
+                    }
+                  }}
+                  className="w-7 h-7 flex items-center justify-center hover:bg-slate-100 rounded transition-colors text-slate-600"
+                >
+                  →
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-7 gap-1 text-center mb-2">
+              {DOW_SHORT.map((d) => (
+                <div key={d} className="text-xs font-medium text-slate-500 py-1">
+                  {d}
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-7 gap-1 text-center">
+              {miniCalendarWeeks.flat().map((cell, idx) => {
+                if (!cell) {
+                  return <div key={idx} className="py-1" />;
+                }
+                const isToday = cell.dateISO === today;
+                const isSelected = cell.dateISO === selectedDateISO;
+                const hasEvents = (eventsByDate.get(cell.dateISO) || []).length > 0;
+
+                return (
+                  <div
+                    key={idx}
+                    onClick={() => {
+                      setYear(miniYear);
+                      setMonthIndex(miniMonthIndex);
+                      setSelectedDateISO(cell.dateISO);
+                    }}
+                    className={`py-1 text-xs cursor-pointer rounded-full aspect-square flex items-center justify-center transition-colors ${
+                      isToday
+                        ? 'bg-blue-600 text-white font-bold'
+                        : isSelected
+                        ? 'bg-blue-100 text-blue-700 font-semibold'
+                        : hasEvents
+                        ? 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        : 'text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    {cell.day}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Events for Selected Date */}
+          <div className="border-t border-slate-200 pt-4">
+            <h3 className="text-sm font-semibold text-slate-700 mb-3">
+              Events on {selectedDateISO}
+            </h3>
+            {selectedEvents.length === 0 ? (
+              <p className="text-sm text-slate-500 italic">No events</p>
             ) : (
-              <CalendarSheet
-                headerTitle={headerTitle}
-                year={year}
-                monthIndex={monthIndex}
-                weeks={calendarWeeks}
-                selectedDateISO={selectedDateISO}
-                setSelectedDateISO={setSelectedDateISO}
-                eventsByDate={eventsByDate}
-              />
+              <div className="space-y-2">
+                {selectedEvents.map((event, idx) => (
+                  <div
+                    key={idx}
+                    className="px-3 py-2 bg-blue-50 border border-blue-200 rounded text-sm text-blue-900"
+                  >
+                    {event}
+                  </div>
+                ))}
+              </div>
             )}
-          </>
-        ) : (
-          <>
-            {/* ✅ ADD EVENT PAGE = ONLY IMPORT UI */}
-            <div className="mb-5 grid gap-4 rounded-2xl border bg-white p-4 lg:grid-cols-3">
-              <div className="lg:col-span-2">
-                <div className="mb-2 text-sm font-semibold">Add data (Paste template)</div>
+          </div>
+        </div>
+
+        {/* Calendar/Events View */}
+        <div className="flex-1 overflow-auto bg-white">
+          {view === 'month' && (
+            <MonthView
+              weeks={calendarWeeks}
+              year={year}
+              monthIndex={monthIndex}
+              eventsByDate={eventsByDate}
+              selectedDateISO={selectedDateISO}
+              today={today}
+              onDateClick={openEventModal}
+            />
+          )}
+
+          {view === 'week' && (
+            <WeekView
+              year={year}
+              monthIndex={monthIndex}
+              selectedDateISO={selectedDateISO}
+              eventsByDate={eventsByDate}
+              today={today}
+            />
+          )}
+
+          {view === 'events' && (
+            <EventsGridView
+              rows={rows}
+              selectedDateISO={selectedDateISO}
+              setSelectedDateISO={setSelectedDateISO}
+              updateCell={updateCell}
+              clearMonth={clearMonth}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Event Modal */}
+      {showEventModal && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={() => setShowEventModal(false)}
+        >
+          <div
+            className="bg-white rounded-lg w-full max-w-md shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-slate-200">
+              <h2 className="text-xl font-semibold text-slate-800">Add Event</h2>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Event Column
+                </label>
+                <select
+                  value={editingEventCol}
+                  onChange={(e) => setEditingEventCol(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {EVENT_COLS.map((col) => (
+                    <option key={col} value={col}>{col}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Event Title
+                </label>
+                <input
+                  id="eventInput"
+                  type="text"
+                  placeholder="Add title"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-2">
+              <button
+                onClick={() => setShowEventModal(false)}
+                className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveEventFromModal}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Modal */}
+      {showImportModal && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={() => setShowImportModal(false)}
+        >
+          <div
+            className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-auto shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-slate-200">
+              <h2 className="text-xl font-semibold text-slate-800">Import Events</h2>
+            </div>
+            <div className="p-6 space-y-6">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Paste Template Data
+                </label>
                 <textarea
                   value={pasteText}
                   onChange={(e) => setPasteText(e.target.value)}
-                  placeholder={`Paste copied table from Google Sheets (Date + Event 1..Event 10)\n\nExample:\nDate\tEvent 1\tEvent 2\n10-Feb-2026\tMeeting\tCall`}
-                  className="h-28 w-full resize-none rounded-xl border bg-white p-3 text-sm outline-none"
+                  placeholder="Paste copied table from Google Sheets (Date + Event 1..Event 10)"
+                  className="w-full min-h-[150px] px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm resize-y"
                 />
-                <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-2">
+                <div className="mt-3 flex gap-2">
                   <button
                     onClick={applyPaste}
-                    className="w-full rounded-xl bg-[#0b5cad] px-4 py-2 text-sm font-semibold text-white sm:w-auto"
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors font-medium"
                   >
                     Import Paste
                   </button>
                   <button
-                    onClick={() => setPasteText("")}
-                    className="w-full rounded-xl bg-slate-100 px-4 py-2 text-sm font-semibold sm:w-auto"
+                    onClick={() => setPasteText('')}
+                    className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 transition-colors"
                   >
                     Clear
                   </button>
@@ -615,45 +858,38 @@ useEffect(() => {
               </div>
 
               <div>
-                <div className="mb-2 text-sm font-semibold">Upload CSV</div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Upload CSV File
+                </label>
                 <input
                   ref={fileRef}
                   type="file"
                   accept=".csv"
                   onChange={onUploadFile}
-                  className="w-full rounded-xl border bg-white p-2 text-sm"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-700 file:cursor-pointer"
                 />
-
-                <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
-                  <div className="font-semibold text-slate-800">CSV columns required:</div>
-                  <div>Date, Event 1, Event 2, … Event 10</div>
-                  <div className="mt-2">Only the selected month data will be applied.</div>
-                </div>
-
-                <button
-                  onClick={clearMonth}
-                  className="mt-4 w-full rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white"
-                >
-                  Clear Month Data
-                </button>
-
-                <button
-                  onClick={() => setPage("landing")}
-                  className="mt-3 w-full rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
-                >
-                  Back
-                </button>
               </div>
-            </div>
-          </>
-        )}
-      </div>
 
-      {/* Bottom tabs ONLY in landing page */}
-      {page === "landing" && (
-        <div className="sticky bottom-0 z-40 border-t bg-white">
-          <div className="mx-auto max-w-7xl px-4 py-2">
-            {/* Tabs are removed intentionally */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-md">
+                <div className="text-xs font-semibold text-slate-700 mb-1">CSV Format Required:</div>
+                <div className="text-xs text-slate-600">Date, Event 1, Event 2, … Event 10</div>
+              </div>
+
+              <button
+                onClick={clearMonth}
+                className="w-full px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors font-medium"
+              >
+                Clear Month Data
+              </button>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-200 flex justify-end">
+              <button
+                onClick={() => setShowImportModal(false)}
+                className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 transition-colors"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -662,221 +898,250 @@ useEffect(() => {
 }
 
 /* =======================
-   EVENTS TABLE
+   MONTH VIEW
 ======================= */
-interface EventsSheetProps {
-  headerTitle: string;
-  rows: MonthRow[];
+interface MonthViewProps {
+  weeks: (CalendarCell | null)[][];
+  year: number;
+  monthIndex: number;
+  eventsByDate: Map<string, string[]>;
   selectedDateISO: string;
-  setSelectedDateISO: (dateISO: string) => void;
-  updateCell: (dateISO: string, col: string, value: string) => void;
-  onAddEvent: () => void;
+  today: string;
+  onDateClick: (dateISO: string) => void;
 }
 
-function EventsSheet({
-  headerTitle,
-  rows,
+function MonthView({
+  weeks,
+  year,
+  monthIndex,
+  eventsByDate,
   selectedDateISO,
-  setSelectedDateISO,
-  updateCell,
-  onAddEvent,
-}: EventsSheetProps): JSX.Element {
+  today,
+  onDateClick,
+}: MonthViewProps): JSX.Element {
   return (
-    <div className="overflow-hidden rounded-2xl border bg-white">
-      {/* Sticky blue header */}
-      <div className="sticky top-0 z-40 border-b bg-[#1f3b57] h-[56px] px-4 flex items-center">
-        <div className="flex w-full items-center justify-between">
-          <div className="text-sm font-semibold text-white">Events — {headerTitle}</div>
-
-          <button
-            onClick={onAddEvent}
-            className="rounded-lg bg-white/15 px-4 py-2 text-xs font-semibold text-white hover:bg-white/25"
+    <div className="h-full flex flex-col">
+      {/* Weekday Headers */}
+      <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">
+        {DOW.map((day) => (
+          <div
+            key={day}
+            className="py-3 text-center text-xs font-semibold text-slate-600 uppercase border-r border-slate-200 last:border-r-0"
           >
-            Add Event
-          </button>
-        </div>
+            {day}
+          </div>
+        ))}
       </div>
 
-      {/* Table */}
-      <div className="overflow-auto max-h-[70vh]">
-        <table className="min-w-[1400px] border-collapse">
-          <thead>
-            <tr className="sticky top-0 z-30 bg-[#2f5f49] text-white">
-              <th className="sticky left-0 z-40 min-w-[140px] border border-white/10 px-3 py-3 text-left text-sm bg-[#2f5f49]">
-                Date
-              </th>
+      {/* Calendar Grid */}
+      <div className="flex-1 grid" style={{ gridTemplateRows: `repeat(${weeks.length}, 1fr)` }}>
+        {weeks.map((week, wi) => (
+          <div key={wi} className="grid grid-cols-7">
+            {week.map((cell, ci) => {
+              if (!cell) {
+                return (
+                  <div
+                    key={ci}
+                    className="border-r border-b border-slate-200 bg-slate-50"
+                  />
+                );
+              }
 
-              {EVENT_COLS.map((c) => (
-                <th
-                  key={c}
-                  className="min-w-[140px] border border-white/10 px-3 py-3 text-left text-sm"
-                >
-                  {c}
-                </th>
-              ))}
-            </tr>
-          </thead>
-
-          <tbody>
-            {rows.map((r) => {
-              const isSelected = r.dateISO === selectedDateISO;
+              const isToday = cell.dateISO === today;
+              const isSelected = cell.dateISO === selectedDateISO;
+              const events = eventsByDate.get(cell.dateISO) || [];
 
               return (
-                <tr
-                  key={r.dateISO}
-                  className={classNames(
-                    "hover:bg-slate-50",
-                    isSelected ? "bg-[#eaf2ff]" : "bg-white"
-                  )}
+                <div
+                  key={ci}
+                  onClick={() => onDateClick(cell.dateISO)}
+                  className={`border-r border-b border-slate-200 p-2 cursor-pointer transition-colors ${
+                    isSelected ? 'bg-blue-50' : 'bg-white hover:bg-slate-50'
+                  }`}
                 >
-                  <td
-                    className={classNames(
-                      "sticky left-0 z-10 border px-3 py-2 text-sm font-semibold",
-                      isSelected ? "bg-[#eaf2ff]" : "bg-white"
-                    )}
-                    onClick={() => setSelectedDateISO(r.dateISO)}
+                  <div
+                    className={`text-xs mb-1 inline-flex items-center justify-center w-6 h-6 rounded-full ${
+                      isToday ? 'bg-blue-600 text-white font-bold' : 'text-slate-600'
+                    }`}
                   >
-                    {r.dateLabel}
-                  </td>
+                    {cell.day}
+                  </div>
 
-                  {EVENT_COLS.map((c) => (
-                    <td key={c} className="border p-0">
-                      <input
-                        value={r.events[c]}
-                        onFocus={() => setSelectedDateISO(r.dateISO)}
-                        onChange={(e) => updateCell(r.dateISO, c, e.target.value)}
-                        className="h-10 w-full bg-transparent px-3 text-sm outline-none"
-                        placeholder=""
-                      />
-                    </td>
-                  ))}
-                </tr>
+                  <div className="text-xs mt-1 space-y-1">
+                    {events.slice(0, 3).map((ev, idx) => (
+                      <div
+                        key={idx}
+                        className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded truncate"
+                      >
+                        {ev}
+                      </div>
+                    ))}
+                    {events.length > 3 && (
+                      <div className="text-slate-500 text-[10px]">
+                        +{events.length - 3} more
+                      </div>
+                    )}
+                  </div>
+                </div>
               );
             })}
-          </tbody>
-        </table>
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 
 /* =======================
-   CALENDAR TABLE
+   WEEK VIEW
 ======================= */
-interface CalendarSheetProps {
-  headerTitle: string;
+interface WeekViewProps {
   year: number;
   monthIndex: number;
-  weeks: (CalendarCell | null)[][];
   selectedDateISO: string;
-  setSelectedDateISO: (dateISO: string) => void;
   eventsByDate: Map<string, string[]>;
+  today: string;
 }
 
-function CalendarSheet({
-  headerTitle,
+function WeekView({
   year,
   monthIndex,
-  weeks,
+  selectedDateISO,
+  eventsByDate,
+  today,
+}: WeekViewProps): JSX.Element {
+  const selectedDate = new Date(selectedDateISO);
+  const dayOfWeek = selectedDate.getDay();
+  const weekStart = new Date(selectedDate);
+  weekStart.setDate(selectedDate.getDate() - dayOfWeek);
+
+  const weekDays: Date[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart);
+    d.setDate(weekStart.getDate() + i);
+    weekDays.push(d);
+  }
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Header */}
+      <div className="grid grid-cols-[60px_repeat(7,1fr)] border-b border-slate-200">
+        <div className="border-r border-slate-200" />
+        {weekDays.map((d, idx) => {
+          const dateISO = d.toISOString().split('T')[0];
+          const isToday = dateISO === today;
+          return (
+            <div
+              key={idx}
+              className="p-3 text-center border-r border-slate-200 bg-slate-50"
+            >
+              <div className="text-xs text-slate-600 uppercase">
+                {DOW[idx]}
+              </div>
+              <div
+                className={`text-2xl mt-1 inline-flex items-center justify-center w-10 h-10 rounded-full ${
+                  isToday ? 'bg-blue-600 text-white font-bold' : 'text-slate-800'
+                }`}
+              >
+                {d.getDate()}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Time slots */}
+      <div className="flex-1 overflow-auto">
+        <div className="grid grid-cols-[60px_repeat(7,1fr)]">
+          {Array.from({ length: 24 }).map((_, hour) => (
+            <React.Fragment key={hour}>
+              <div className="border-r border-b border-slate-200 p-2 text-right text-xs text-slate-500">
+                {hour.toString().padStart(2, '0')}:00
+              </div>
+              {weekDays.map((d, idx) => (
+                <div
+                  key={idx}
+                  className="border-r border-b border-slate-200 min-h-[60px] bg-white"
+                />
+              ))}
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =======================
+   EVENTS GRID VIEW
+======================= */
+interface EventsGridViewProps {
+  rows: MonthRow[];
+  selectedDateISO: string;
+  setSelectedDateISO: (dateISO: string) => void;
+  updateCell: (dateISO: string, col: string, value: string) => void;
+  clearMonth: () => void;
+}
+
+function EventsGridView({
+  rows,
   selectedDateISO,
   setSelectedDateISO,
-  eventsByDate,
-}: CalendarSheetProps): JSX.Element {
+  updateCell,
+  clearMonth,
+}: EventsGridViewProps): JSX.Element {
   return (
-    <div className="overflow-hidden rounded-2xl border bg-white">
-      <div className="border-b bg-[#1f3b57] px-4 py-3 text-sm font-semibold text-white">
-        Event Calendar — {headerTitle}
-      </div>
-
-      <div className="grid gap-0 border-b lg:grid-cols-12">
-        <div className="lg:col-span-3">
-          <div className="border-b bg-[#274b6d] px-4 py-2 text-xs font-semibold text-white">
-            Month
-          </div>
-          <div className="px-4 py-2 text-sm font-semibold">{MONTHS[monthIndex]}</div>
-        </div>
-        <div className="lg:col-span-3">
-          <div className="border-b bg-[#274b6d] px-4 py-2 text-xs font-semibold text-white">
-            Year
-          </div>
-          <div className="px-4 py-2 text-sm font-semibold">{year}</div>
-        </div>
-        <div className="lg:col-span-6" />
-      </div>
-
-      <div className="overflow-auto">
-        <table className="w-full min-w-[980px] border-collapse">
-          <thead>
-            <tr className="bg-[#274b6d] text-white">
-              {DOW.map((d) => (
-                <th key={d} className="border border-white/10 px-3 py-3 text-left text-xs">
-                  {d}
-                </th>
-              ))}
-            </tr>
-          </thead>
-
-          <tbody>
-            {weeks.map((week, wi) => (
-              <tr key={wi}>
-                {week.map((cell, ci) => {
-                  if (!cell) return <td key={ci} className="h-20 border bg-slate-50" />;
-
-                  const isSelected = cell.dateISO === selectedDateISO;
-                  const list = eventsByDate.get(cell.dateISO) || [];
-
-                  return (
-                    <td
-                      key={ci}
-                      className={classNames(
-                        "h-24 border align-top",
-                        isSelected ? "bg-[#0b5cad] text-white" : "bg-white"
-                      )}
-                      onClick={() => setSelectedDateISO(cell.dateISO)}
-                    >
-                      <div className="px-3 pt-2 text-xs font-semibold">
-                        {MONTHS[monthIndex].slice(0, 3)} {cell.day}
-                      </div>
-
-                      <div className="px-3 pb-2 pt-1 text-[11px] leading-4">
-                        {list.length === 0 ? (
-                          <div className={classNames(isSelected ? "text-white/70" : "text-slate-400")}>
-                            —
-                          </div>
-                        ) : (
-                          <div className="space-y-1">
-                            {list.slice(0, 3).map((ev, idx) => (
-                              <div
-                                key={idx}
-                                className={classNames(
-                                  "truncate rounded-md px-2 py-0.5",
-                                  isSelected ? "bg-white/15" : "bg-slate-100"
-                                )}
-                              >
-                                {ev}
-                              </div>
-                            ))}
-                            {list.length > 3 && (
-                              <div className={classNames(isSelected ? "text-white/80" : "text-slate-500")}>
-                                +{list.length - 3} more
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                  );
-                })}
-              </tr>
+    <div className="h-full overflow-auto">
+      <table className="w-full min-w-[1400px] border-collapse">
+        <thead>
+          <tr className="bg-slate-50 sticky top-0 z-10">
+            <th className="sticky left-0 z-11 min-w-[140px] border border-slate-200 px-3 py-3 text-left text-sm font-semibold text-slate-700 bg-slate-50">
+              Date
+            </th>
+            {EVENT_COLS.map((c) => (
+              <th
+                key={c}
+                className="min-w-[140px] border border-slate-200 px-3 py-3 text-left text-sm font-semibold text-slate-700"
+              >
+                {c}
+              </th>
             ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="border-t bg-slate-50 px-4 py-3 text-xs text-slate-600">
-        Tip: Click any calendar date → then go to <b>Events</b> tab and edit Event 1..10.
-        Calendar updates instantly.
-      </div>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const isSelected = r.dateISO === selectedDateISO;
+            return (
+              <tr
+                key={r.dateISO}
+                className={`transition-colors ${
+                  isSelected ? 'bg-blue-50' : 'bg-white hover:bg-slate-50'
+                }`}
+              >
+                <td
+                  onClick={() => setSelectedDateISO(r.dateISO)}
+                  className={`sticky left-0 z-1 border border-slate-200 px-3 py-3 text-sm font-medium cursor-pointer ${
+                    isSelected ? 'bg-blue-50' : 'bg-white'
+                  }`}
+                >
+                  {r.dateLabel}
+                </td>
+                {EVENT_COLS.map((c) => (
+                  <td key={c} className="border border-slate-200 p-0">
+                    <input
+                      value={r.events[c]}
+                      onFocus={() => setSelectedDateISO(r.dateISO)}
+                      onChange={(e) => updateCell(r.dateISO, c, e.target.value)}
+                      className="w-full h-full px-3 py-3 border-none bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset"
+                      placeholder=""
+                    />
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
