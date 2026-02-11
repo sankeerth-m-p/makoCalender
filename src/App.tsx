@@ -32,6 +32,11 @@ interface ParsedRow {
   [key: string]: string;
 }
 
+interface QuickAddEntry {
+  dateISO: string;
+  value: string;
+}
+
 const MONTHS: string[] = [
   "January",
   "February",
@@ -212,6 +217,68 @@ function mergeImportedIntoMonth(
   return Array.from(map.values());
 }
 
+function parseQuickAddEntries(
+  text: string,
+  fallbackYear: number,
+  fallbackMonthIndex: number
+): QuickAddEntry[] {
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const entries: QuickAddEntry[] = [];
+
+  lines.forEach((line) => {
+    const parts = line.split(/\s*\|\s*/);
+    if (parts.length < 2) return;
+
+    const dateISO = parseAnyDateToISO(parts[0], fallbackYear, fallbackMonthIndex);
+    const value = parts.slice(1).join(" | ").trim();
+
+    if (!dateISO || !value) return;
+    entries.push({ dateISO, value });
+  });
+
+  return entries;
+}
+
+function applyQuickAddEntries(
+  baseRows: MonthRow[],
+  entries: QuickAddEntry[],
+  year: number,
+  monthIndex: number
+): { rows: MonthRow[]; addedCount: number; skippedCount: number } {
+  const map = new Map(baseRows.map((r) => [r.dateISO, { ...r, events: { ...r.events } }]));
+  let addedCount = 0;
+  let skippedCount = 0;
+
+  entries.forEach((entry) => {
+    const [y, m] = entry.dateISO.split("-").map(Number);
+    if (y !== year || m !== monthIndex + 1) {
+      skippedCount++;
+      return;
+    }
+
+    const target = map.get(entry.dateISO);
+    if (!target) {
+      skippedCount++;
+      return;
+    }
+
+    const freeCol = EVENT_COLS.find((col) => !String(target.events[col] || "").trim());
+    if (!freeCol) {
+      skippedCount++;
+      return;
+    }
+
+    target.events[freeCol] = entry.value;
+    addedCount++;
+  });
+
+  return { rows: Array.from(map.values()), addedCount, skippedCount };
+}
+
 function buildCalendarGrid(
   year: number,
   monthIndex: number
@@ -275,6 +342,7 @@ export default function App({ session, onLogout }: AppProps) {
   );
 
   const [pasteText, setPasteText] = useState<string>("");
+  const [quickAddText, setQuickAddText] = useState<string>("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [miniMonthIndex, setMiniMonthIndex] = useState<number>(now.getMonth());
@@ -442,6 +510,38 @@ export default function App({ session, onLogout }: AppProps) {
     alert("CSV imported & saved!");
 
     if (fileRef.current) fileRef.current.value = "";
+    setShowImportModal(false);
+  }
+
+  async function applyQuickAdd(): Promise<void> {
+    if (!quickAddText.trim()) return;
+
+    const entries = parseQuickAddEntries(quickAddText, year, monthIndex);
+    if (!entries.length) {
+      alert("No valid lines found. Use: Date | Event title");
+      return;
+    }
+
+    if (entries.length > 100) {
+      alert("You can add up to 100 events at once.");
+      return;
+    }
+
+    const result = applyQuickAddEntries(rows, entries, year, monthIndex);
+    if (result.addedCount === 0) {
+      alert("No events were added. Check date/month and free event slots.");
+      return;
+    }
+
+    setRows(result.rows);
+    setQuickAddText("");
+    await bulkUpload(result.rows);
+
+    const message =
+      result.skippedCount > 0
+        ? `Added ${result.addedCount} event(s). Skipped ${result.skippedCount}.`
+        : `Added ${result.addedCount} event(s).`;
+    alert(message);
     setShowImportModal(false);
   }
 
@@ -827,6 +927,35 @@ export default function App({ session, onLogout }: AppProps) {
               <h2 className="text-xl font-semibold text-slate-800">Import Events</h2>
             </div>
             <div className="p-6 space-y-6">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Quick Add (Up to 100)
+                </label>
+                <textarea
+                  value={quickAddText}
+                  onChange={(e) => setQuickAddText(e.target.value)}
+                  placeholder={"One per line: YYYY-MM-DD | Event title"}
+                  className="w-full min-h-37.5 px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm resize-y"
+                />
+                <div className="mt-3 flex gap-2">
+                  <button
+                    onClick={applyQuickAdd}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md transition-colors font-medium"
+                  >
+                    Add 100 Events
+                  </button>
+                  <button
+                    onClick={() => setQuickAddText("")}
+                    className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 transition-colors"
+                  >
+                    Clear
+                  </button>
+                </div>
+                <div className="mt-2 text-xs text-slate-600">
+                  Example: 2026-02-15 | Team review
+                </div>
+              </div>
+
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">
                   Paste Template Data
