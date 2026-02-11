@@ -62,17 +62,7 @@ export default function MonthView({
                   }`}
                 >
                   {/* Add Event Button */}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onAddEvent(cell.dateISO);
-                    }}
-                    className="absolute top-1 right-1 h-6 w-6 rounded-full border border-blue-200 bg-white text-blue-600 opacity-0 transition-opacity hover:bg-blue-50 group-hover:opacity-100 focus:opacity-100"
-                    aria-label={`Add event for ${cell.dateISO}`}
-                  >
-                    +
-                  </button>
+                 
 
                   {/* Day Number */}
                   <div
@@ -95,7 +85,17 @@ export default function MonthView({
                         {ev}
                       </div>
                     ))}
-                  </div>
+                  </div><button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onAddEvent(cell.dateISO);
+                        }}
+                        className="h-7  w-full rounded-md border border-blue-200 bg-blue-50 text-sm font-semibold text-blue-700 opacity-0 transition-opacity hover:bg-blue-100 group-hover:opacity-100 focus:opacity-100"
+                        aria-label={`Add event for ${cell.dateISO}`}
+                      >
+                        + 
+                      </button>
                 </div>
               );
             })}
