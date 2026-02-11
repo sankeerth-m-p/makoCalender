@@ -1,9 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import * as XLSX from "xlsx";
 
-/**
- * makoCalendar - Google Calendar Style Events Manager
- * Redesigned with Tailwind CSS and blue/slate theme
- */
+
 
 const MIN_YEAR = 1990;
 const MAX_YEAR = 2030;
@@ -271,14 +269,52 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
 
   const [rows, setRows] = useState<MonthRow[]>(buildMonthRows(year, monthIndex));
   const [selectedDateISO, setSelectedDateISO] = useState<string>(() =>
-    now.toISOString().split('T')[0]
+    now.toISOString().split("T")[0]
   );
 
   const [pasteText, setPasteText] = useState<string>("");
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // capture refs (for share/download)
+  const monthRef = useRef<HTMLDivElement>(null);
+  const weekRef = useRef<HTMLDivElement>(null);
+  const eventsRef = useRef<HTMLDivElement>(null);
+
   const [miniMonthIndex, setMiniMonthIndex] = useState<number>(now.getMonth());
   const [miniYear, setMiniYear] = useState<number>(safeYear);
+
+  // ✅ Download dropdown state
+  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+
+  // ✅ NEW: download menu ref for outside click close
+  const downloadMenuRef = useRef<HTMLDivElement>(null);
+
+  // ✅ CLOSE DOWNLOAD MENU ON OUTSIDE CLICK
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (!showDownloadMenu) return;
+
+      const target = e.target as Node;
+      if (downloadMenuRef.current && !downloadMenuRef.current.contains(target)) {
+        setShowDownloadMenu(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showDownloadMenu]);
+
+  // ✅ CLOSE DOWNLOAD MENU ON ESC
+  useEffect(() => {
+    function handleEsc(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setShowDownloadMenu(false);
+      }
+    }
+
+    document.addEventListener("keydown", handleEsc);
+    return () => document.removeEventListener("keydown", handleEsc);
+  }, []);
 
   useEffect(() => {
     setRows(buildMonthRows(year, monthIndex));
@@ -327,7 +363,10 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
   }, [rows]);
 
   const calendarWeeks = useMemo(() => buildCalendarGrid(year, monthIndex), [year, monthIndex]);
-  const miniCalendarWeeks = useMemo(() => buildCalendarGrid(miniYear, miniMonthIndex), [miniYear, miniMonthIndex]);
+  const miniCalendarWeeks = useMemo(
+    () => buildCalendarGrid(miniYear, miniMonthIndex),
+    [miniYear, miniMonthIndex]
+  );
 
   async function updateCell(dateISO: string, col: string, value: string): Promise<void> {
     const eventCol = Number(col.replace("Event ", ""));
@@ -447,7 +486,7 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
 
   function goToToday() {
     const today = new Date();
-    const todayISO = today.toISOString().split('T')[0];
+    const todayISO = today.toISOString().split("T")[0];
     setYear(today.getFullYear());
     setMonthIndex(today.getMonth());
     setMiniYear(today.getFullYear());
@@ -479,14 +518,87 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
   }
 
   function saveEventFromModal() {
-    const value = (document.getElementById('eventInput') as HTMLInputElement)?.value || '';
+    const value = (document.getElementById("eventInput") as HTMLInputElement)?.value || "";
     if (value.trim()) {
       updateCell(editingDate, editingEventCol, value);
     }
     setShowEventModal(false);
   }
 
-  const today = new Date().toISOString().split('T')[0];
+  // ✅ PNG download
+  async function downloadPNG() {
+    const target =
+      view === "month"
+        ? monthRef.current
+        : view === "week"
+        ? weekRef.current
+        : eventsRef.current;
+
+    if (!target) return;
+
+    const dataUrl = await toPng(target, {
+      cacheBust: true,
+      pixelRatio: 2,
+      backgroundColor: "#ffffff",
+    });
+
+    const link = document.createElement("a");
+    link.download = `${view}-${MONTHS[monthIndex]}-${year}.png`;
+    link.href = dataUrl;
+    link.click();
+  }
+
+  // ✅ Excel download (FULL MONTH)
+  function downloadExcel() {
+    try {
+      const monthName = MONTHS[monthIndex];
+
+      // ✅ FIX: never empty
+      const safeRows = rows?.length ? rows : buildMonthRows(year, monthIndex);
+
+      const aoa: any[][] = [];
+
+      // Title row
+      aoa.push([`makoCalendar - ${monthName} ${year}`]);
+
+      // Header row
+      aoa.push(["Date", ...EVENT_COLS]);
+
+      // Data rows
+      safeRows.forEach((r) => {
+        aoa.push([r.dateISO, ...EVENT_COLS.map((c) => r.events[c] || "")]);
+      });
+
+      const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+
+      worksheet["!merges"] = [
+        {
+          s: { r: 0, c: 0 },
+          e: { r: 0, c: EVENT_COLS.length },
+        },
+      ];
+
+      worksheet["!cols"] = [
+        { wch: 14 },
+        ...Array.from({ length: 10 }, () => ({ wch: 30 })),
+      ];
+
+      worksheet["!freeze"] = { xSplit: 0, ySplit: 2 };
+
+      const workbook = XLSX.utils.book_new();
+      const sheetName = `${monthName}-${year}`.slice(0, 31);
+      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+
+      const fileName = `${view}-${monthName}-${year}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+    } catch (e) {
+      console.error(e);
+      alert("Excel download failed. Ensure xlsx is installed.");
+    }
+  }
+
+
+  const today = new Date().toISOString().split("T")[0];
   const selectedEvents = eventsByDate.get(selectedDateISO) || [];
 
   return (
@@ -494,7 +606,7 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
       {/* Header */}
       <div className="bg-slate-700 border-b border-slate-600 px-6 py-3 shadow-md">
         <div className="flex items-center justify-between flex-wrap gap-4">
-          {/* Left - App name and navigation */}
+          {/* Left */}
           <div className="flex items-center gap-6 flex-wrap">
             <h1 className="text-2xl font-semibold text-white">makoCalendar</h1>
 
@@ -520,11 +632,9 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
             </div>
           </div>
 
-          {/* Right - User info and logout */}
+          {/* Right */}
           <div className="flex items-center gap-4">
-            <span className="text-slate-200 text-sm">
-              {session.username}
-            </span>
+            <span className="text-slate-200 text-sm">{session.username}</span>
             <button
               onClick={onLogout}
               className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded transition-colors text-sm font-medium"
@@ -567,7 +677,6 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
                 }}
                 className="w-24 px-3 py-2 border border-slate-300 rounded-md bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
-
             </div>
 
             <div className="text-lg font-semibold text-slate-800 ml-4">
@@ -575,37 +684,76 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
             </div>
           </div>
 
-          <div className="flex gap-1">
-            <button
-              onClick={() => setView('month')}
-              className={`px-4 py-2 text-sm font-medium transition-colors ${
-                view === 'month'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              } rounded-l-md border border-slate-300`}
-            >
-              Month
-            </button>
-            <button
-              onClick={() => setView('week')}
-              className={`px-4 py-2 text-sm font-medium transition-colors ${
-                view === 'week'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              } border-t border-b border-slate-300`}
-            >
-              Week
-            </button>
-            <button
-              onClick={() => setView('events')}
-              className={`px-4 py-2 text-sm font-medium transition-colors ${
-                view === 'events'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              } rounded-r-md border border-slate-300`}
-            >
-              Events
-            </button>
+          {/* view switch + share/download */}
+          <div className="flex items-center gap-3">
+            <div className="flex gap-1">
+              <button
+                onClick={() => setView("month")}
+                className={`px-4 py-2 text-sm font-medium transition-colors ${
+                  view === "month"
+                    ? "bg-blue-600 text-white"
+                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                } rounded-l-md border border-slate-300`}
+              >
+                Month
+              </button>
+              <button
+                onClick={() => setView("week")}
+                className={`px-4 py-2 text-sm font-medium transition-colors ${
+                  view === "week"
+                    ? "bg-blue-600 text-white"
+                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                } border-t border-b border-slate-300`}
+              >
+                Week
+              </button>
+              <button
+                onClick={() => setView("events")}
+                className={`px-4 py-2 text-sm font-medium transition-colors ${
+                  view === "events"
+                    ? "bg-blue-600 text-white"
+                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                } rounded-r-md border border-slate-300`}
+              >
+                Events
+              </button>
+            </div>
+
+    
+
+            {/* ✅ DOWNLOAD DROPDOWN BUTTON (fixed outside click close) */}
+            <div className="relative" ref={downloadMenuRef}>
+              <button
+                onClick={() => setShowDownloadMenu((p) => !p)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-md text-sm font-medium transition-colors"
+              >
+                Download ▾
+              </button>
+
+              {showDownloadMenu && (
+                <div className="absolute right-0 mt-2 w-44 bg-white border border-slate-200 rounded-md shadow-lg z-50 overflow-hidden">
+                  <button
+                    onClick={() => {
+                      setShowDownloadMenu(false);
+                      downloadPNG();
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-800"
+                  >
+                    PNG Image
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setShowDownloadMenu(false);
+                      downloadExcel();
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-800"
+                  >
+                    Excel (.xlsx)
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -659,8 +807,8 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
             </div>
 
             <div className="grid grid-cols-7 gap-1 text-center mb-2">
-              {DOW_SHORT.map((d) => (
-                <div key={d} className="text-xs font-medium text-slate-500 py-1">
+              {DOW_SHORT.map((d, idx) => (
+                <div key={idx} className="text-xs font-medium text-slate-500 py-1">
                   {d}
                 </div>
               ))}
@@ -668,9 +816,8 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
 
             <div className="grid grid-cols-7 gap-1 text-center">
               {miniCalendarWeeks.flat().map((cell, idx) => {
-                if (!cell) {
-                  return <div key={idx} className="py-1" />;
-                }
+                if (!cell) return <div key={idx} className="py-1" />;
+
                 const isToday = cell.dateISO === today;
                 const isSelected = cell.dateISO === selectedDateISO;
                 const hasEvents = (eventsByDate.get(cell.dateISO) || []).length > 0;
@@ -685,12 +832,12 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
                     }}
                     className={`py-1 text-xs cursor-pointer rounded-full aspect-square flex items-center justify-center transition-colors ${
                       isToday
-                        ? 'bg-blue-600 text-white font-bold'
+                        ? "bg-blue-600 text-white font-bold"
                         : isSelected
-                        ? 'bg-blue-100 text-blue-700 font-semibold'
+                        ? "bg-blue-100 text-blue-700 font-semibold"
                         : hasEvents
-                        ? 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                        : 'text-slate-600 hover:bg-slate-50'
+                        ? "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                        : "text-slate-600 hover:bg-slate-50"
                     }`}
                   >
                     {cell.day}
@@ -724,36 +871,42 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
 
         {/* Calendar/Events View */}
         <div className="flex-1 overflow-auto bg-white">
-          {view === 'month' && (
-            <MonthView
-              weeks={calendarWeeks}
-              year={year}
-              monthIndex={monthIndex}
-              eventsByDate={eventsByDate}
-              selectedDateISO={selectedDateISO}
-              today={today}
-              onDateClick={openEventModal}
-            />
+          {view === "month" && (
+            <div ref={monthRef} className="h-full">
+              <MonthView
+                weeks={calendarWeeks}
+                year={year}
+                monthIndex={monthIndex}
+                eventsByDate={eventsByDate}
+                selectedDateISO={selectedDateISO}
+                today={today}
+                onDateClick={openEventModal}
+              />
+            </div>
           )}
 
-          {view === 'week' && (
-            <WeekView
-              year={year}
-              monthIndex={monthIndex}
-              selectedDateISO={selectedDateISO}
-              eventsByDate={eventsByDate}
-              today={today}
-            />
+          {view === "week" && (
+            <div ref={weekRef} className="bg-white">
+              <WeekView
+                year={year}
+                monthIndex={monthIndex}
+                selectedDateISO={selectedDateISO}
+                eventsByDate={eventsByDate}
+                today={today}
+              />
+            </div>
           )}
 
-          {view === 'events' && (
-            <EventsGridView
-              rows={rows}
-              selectedDateISO={selectedDateISO}
-              setSelectedDateISO={setSelectedDateISO}
-              updateCell={updateCell}
-              clearMonth={clearMonth}
-            />
+          {view === "events" && (
+            <div ref={eventsRef} className="bg-white">
+              <EventsGridView
+                rows={rows}
+                selectedDateISO={selectedDateISO}
+                setSelectedDateISO={setSelectedDateISO}
+                updateCell={updateCell}
+                clearMonth={clearMonth}
+              />
+            </div>
           )}
         </div>
       </div>
@@ -782,7 +935,9 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
                   className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   {EVENT_COLS.map((col) => (
-                    <option key={col} value={col}>{col}</option>
+                    <option key={col} value={col}>
+                      {col}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -848,7 +1003,7 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
                     Import Paste
                   </button>
                   <button
-                    onClick={() => setPasteText('')}
+                    onClick={() => setPasteText("")}
                     className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 transition-colors"
                   >
                     Clear
@@ -870,8 +1025,12 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
               </div>
 
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-md">
-                <div className="text-xs font-semibold text-slate-700 mb-1">CSV Format Required:</div>
-                <div className="text-xs text-slate-600">Date, Event 1, Event 2, … Event 10</div>
+                <div className="text-xs font-semibold text-slate-700 mb-1">
+                  CSV Format Required:
+                </div>
+                <div className="text-xs text-slate-600">
+                  Date, Event 1, Event 2, … Event 10
+                </div>
               </div>
 
               <button
@@ -911,8 +1070,6 @@ interface MonthViewProps {
 
 function MonthView({
   weeks,
-  year,
-  monthIndex,
   eventsByDate,
   selectedDateISO,
   today,
@@ -920,7 +1077,6 @@ function MonthView({
 }: MonthViewProps): JSX.Element {
   return (
     <div className="h-full flex flex-col">
-      {/* Weekday Headers */}
       <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">
         {DOW.map((day) => (
           <div
@@ -932,17 +1088,13 @@ function MonthView({
         ))}
       </div>
 
-      {/* Calendar Grid */}
       <div className="flex-1 grid" style={{ gridTemplateRows: `repeat(${weeks.length}, 1fr)` }}>
         {weeks.map((week, wi) => (
           <div key={wi} className="grid grid-cols-7">
             {week.map((cell, ci) => {
               if (!cell) {
                 return (
-                  <div
-                    key={ci}
-                    className="border-r border-b border-slate-200 bg-slate-50"
-                  />
+                  <div key={ci} className="border-r border-b border-slate-200 bg-slate-50" />
                 );
               }
 
@@ -955,12 +1107,12 @@ function MonthView({
                   key={ci}
                   onClick={() => onDateClick(cell.dateISO)}
                   className={`border-r border-b border-slate-200 p-2 cursor-pointer transition-colors ${
-                    isSelected ? 'bg-blue-50' : 'bg-white hover:bg-slate-50'
+                    isSelected ? "bg-blue-50" : "bg-white hover:bg-slate-50"
                   }`}
                 >
                   <div
                     className={`text-xs mb-1 inline-flex items-center justify-center w-6 h-6 rounded-full ${
-                      isToday ? 'bg-blue-600 text-white font-bold' : 'text-slate-600'
+                      isToday ? "bg-blue-600 text-white font-bold" : "text-slate-600"
                     }`}
                   >
                     {cell.day}
@@ -976,9 +1128,7 @@ function MonthView({
                       </div>
                     ))}
                     {events.length > 3 && (
-                      <div className="text-slate-500 text-[10px]">
-                        +{events.length - 3} more
-                      </div>
+                      <div className="text-slate-500 text-[10px]">+{events.length - 3} more</div>
                     )}
                   </div>
                 </div>
@@ -1002,13 +1152,7 @@ interface WeekViewProps {
   today: string;
 }
 
-function WeekView({
-  year,
-  monthIndex,
-  selectedDateISO,
-  eventsByDate,
-  today,
-}: WeekViewProps): JSX.Element {
+function WeekView({ selectedDateISO, today }: WeekViewProps): JSX.Element {
   const selectedDate = new Date(selectedDateISO);
   const dayOfWeek = selectedDate.getDay();
   const weekStart = new Date(selectedDate);
@@ -1023,23 +1167,17 @@ function WeekView({
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header */}
       <div className="grid grid-cols-[60px_repeat(7,1fr)] border-b border-slate-200">
         <div className="border-r border-slate-200" />
         {weekDays.map((d, idx) => {
-          const dateISO = d.toISOString().split('T')[0];
+          const dateISO = d.toISOString().split("T")[0];
           const isToday = dateISO === today;
           return (
-            <div
-              key={idx}
-              className="p-3 text-center border-r border-slate-200 bg-slate-50"
-            >
-              <div className="text-xs text-slate-600 uppercase">
-                {DOW[idx]}
-              </div>
+            <div key={idx} className="p-3 text-center border-r border-slate-200 bg-slate-50">
+              <div className="text-xs text-slate-600 uppercase">{DOW[idx]}</div>
               <div
                 className={`text-2xl mt-1 inline-flex items-center justify-center w-10 h-10 rounded-full ${
-                  isToday ? 'bg-blue-600 text-white font-bold' : 'text-slate-800'
+                  isToday ? "bg-blue-600 text-white font-bold" : "text-slate-800"
                 }`}
               >
                 {d.getDate()}
@@ -1049,15 +1187,14 @@ function WeekView({
         })}
       </div>
 
-      {/* Time slots */}
       <div className="flex-1 overflow-auto">
         <div className="grid grid-cols-[60px_repeat(7,1fr)]">
           {Array.from({ length: 24 }).map((_, hour) => (
             <React.Fragment key={hour}>
               <div className="border-r border-b border-slate-200 p-2 text-right text-xs text-slate-500">
-                {hour.toString().padStart(2, '0')}:00
+                {hour.toString().padStart(2, "0")}:00
               </div>
-              {weekDays.map((d, idx) => (
+              {weekDays.map((_, idx) => (
                 <div
                   key={idx}
                   className="border-r border-b border-slate-200 min-h-[60px] bg-white"
@@ -1087,7 +1224,6 @@ function EventsGridView({
   selectedDateISO,
   setSelectedDateISO,
   updateCell,
-  clearMonth,
 }: EventsGridViewProps): JSX.Element {
   return (
     <div className="h-full overflow-auto">
@@ -1114,13 +1250,13 @@ function EventsGridView({
               <tr
                 key={r.dateISO}
                 className={`transition-colors ${
-                  isSelected ? 'bg-blue-50' : 'bg-white hover:bg-slate-50'
+                  isSelected ? "bg-blue-50" : "bg-white hover:bg-slate-50"
                 }`}
               >
                 <td
                   onClick={() => setSelectedDateISO(r.dateISO)}
                   className={`sticky left-0 z-1 border border-slate-200 px-3 py-3 text-sm font-medium cursor-pointer ${
-                    isSelected ? 'bg-blue-50' : 'bg-white'
+                    isSelected ? "bg-blue-50" : "bg-white"
                   }`}
                 >
                   {r.dateLabel}
