@@ -309,15 +309,24 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
 
           )}
 
-          {view === "week" && (
-            <WeekView
-              year={year}
-              monthIndex={monthIndex}
-              selectedDateISO={selectedDateISO}
-              eventsByDate={eventsByDate}
-              today={today}
-            />
-          )}
+       {view === "week" && (
+  <WeekView
+    year={year}
+    monthIndex={monthIndex}
+    selectedDateISO={selectedDateISO}
+    eventsByDate={eventsByDate}
+    today={today}
+    onChangeWeek={(newDateISO) => {
+      setSelectedDateISO(newDateISO);
+
+      // 👇 keep month/year in sync when week crosses months
+      const d = new Date(newDateISO);
+      setYear(d.getFullYear());
+      setMonthIndex(d.getMonth());
+    }}
+  />
+)}
+
 
           {view === "events" && (
             <EventsGridView

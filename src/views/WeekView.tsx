@@ -68,7 +68,30 @@ function shiftWeek(days: number) {
   </button>
 </div>
 
-
+   <div className="grid grid-cols-[60px_repeat(7,1fr)] border-b border-slate-200">
+        <div className="border-r border-slate-200" />
+        {weekDays.map((d, idx) => {
+          const dateISO = toLocalISO(d);
+          const isToday = dateISO === today;
+          return (
+            <div
+              key={idx}
+              className="p-3 text-center border-r border-slate-200 bg-slate-50"
+            >
+              <div className="text-xs text-slate-600 uppercase">
+                {DOW[idx]}
+              </div>
+              <div
+                className={`text-2xl mt-1 inline-flex items-center justify-center w-10 h-10 rounded-full ${
+                  isToday ? "bg-blue-600 text-white font-bold" : "text-slate-800"
+                }`}
+              >
+                {d.getDate()}
+              </div>
+            </div>
+          );
+        })}
+      </div>
       {/* All-day events */}
       <div className="grid grid-cols-[60px_repeat(7,1fr)] border-b border-slate-200">
         <div className="border-r border-slate-200 p-2 text-right text-xs text-slate-500">
