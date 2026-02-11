@@ -561,14 +561,13 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
                 min={MIN_YEAR}
                 max={MAX_YEAR}
                 value={year}
-                onChange={(e) => {
-                  const val = Number(e.target.value);
-                  if (val >= MIN_YEAR && val <= MAX_YEAR) {
-                    setYear(val);
-                  }
+                onChange={(e) => setYear(Number(e.target.value))}
+                onBlur={() => {
+                  setYear((prev) => Math.min(Math.max(prev, MIN_YEAR), MAX_YEAR));
                 }}
                 className="w-24 px-3 py-2 border border-slate-300 rounded-md bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
+
             </div>
 
             <div className="text-lg font-semibold text-slate-800 ml-4">
