@@ -62,7 +62,7 @@ const MONTHS: string[] = [
 ];
 
 const EVENT_COLS: string[] = Array.from({ length: 10 }, (_, i) => `Event ${i + 1}`);
-const DOW: string[] = ["MON", "TUE", "WED", "THU", "FRI", "SAT"];
+const DOW: string[] = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
@@ -244,7 +244,7 @@ function buildCalendarGrid(
   for (let w = 0; w < 6; w++) {
     const week: (CalendarCell | null)[] = [];
 
-    for (let col = 0; col < 6; col++) {
+    for (let col = 0; col < 7; col++) {
       const absolutePos = w * 7 + col;
       const shouldPlace = absolutePos >= firstIdx && day <= total;
 
@@ -265,6 +265,7 @@ function buildCalendarGrid(
   return weeks;
 }
 
+
 function classNames(...xs: (string | boolean | undefined)[]): string {
   return xs.filter(Boolean).join(" ");
 }
@@ -284,6 +285,7 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
   const [tab, setTab] = useState<"events" | "calendar">("events");
   const [year, setYear] = useState<number>(safeYear);
   const [monthIndex, setMonthIndex] = useState<number>(now.getMonth());
+const [yearInput, setYearInput] = useState<string>(String(safeYear));
 
   // landing = show tables
   // addEvent = show ONLY import UI
@@ -296,40 +298,45 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
 
   const [pasteText, setPasteText] = useState<string>("");
   const fileRef = useRef<HTMLInputElement>(null);
+useEffect(() => {
+  setRows(buildMonthRows(year, monthIndex));
+  setSelectedDateISO(isoDate(year, monthIndex, 1));
+}, [year, monthIndex]);
+useEffect(() => {
+  setYearInput(String(year));
+}, [year]);
 
   useEffect(() => {
-    async function loadMonth() {
-      try {
-        const res = await fetch(
-          `https://backend-m7hv.onrender.com/events/month?year=${year}&month=${monthIndex + 1}`,
-          {
-            headers: {
-              Authorization: `Bearer ${session.token}`,
-            },
-          }
-        );
+  async function loadMonth() {
+    try {
+      const res = await fetch(
+        `https://backend-m7hv.onrender.com/events/month?year=${year}&month=${monthIndex + 1}`,
+        {
+          headers: {
+            Authorization: `Bearer ${session.token}`,
+          },
+        }
+      );
 
-        if (!res.ok) throw new Error("Failed to load events");
+      if (!res.ok) throw new Error("Failed to load events");
 
-        const data = await res.json();
-        const base = buildMonthRows(year, monthIndex);
+      const data = await res.json();
 
-        base.forEach((r) => {
-          if (data[r.dateISO]) {
-            r.events = { ...r.events, ...data[r.dateISO] };
-          }
-        });
-
-        setRows(base);
-        setSelectedDateISO(isoDate(year, monthIndex, 1));
-      } catch (e) {
-        console.error(e);
-        setRows(buildMonthRows(year, monthIndex));
-      }
+      setRows((prev) =>
+        prev.map((r) =>
+          data[r.dateISO]
+            ? { ...r, events: { ...r.events, ...data[r.dateISO] } }
+            : r
+        )
+      );
+    } catch (e) {
+      console.error(e);
     }
+  }
 
-    loadMonth();
-  }, [year, monthIndex, session.token]);
+  loadMonth();
+}, [year, monthIndex, session.token]);
+
 
   const eventsByDate = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -460,11 +467,11 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
 
   const headerTitle = useMemo(() => `${MONTHS[monthIndex]} ${year}`, [monthIndex, year]);
 
-  function handleYearChange(rawValue: string): void {
-    const n = Number(rawValue || MIN_YEAR);
-    const clamped = Math.min(Math.max(n, MIN_YEAR), MAX_YEAR);
-    setYear(clamped);
-  }
+  // function handleYearChange(rawValue: string): void {
+  //   const n = Number(rawValue || MIN_YEAR);
+  //   const clamped = Math.min(Math.max(n, MIN_YEAR), MAX_YEAR);
+  //   setYear(clamped);
+  // }
 
   return (
     <div className="min-h-screen bg-[#f6f7fb] text-slate-900">
@@ -499,13 +506,25 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
                 </select>
 
                 <input
-                  type="number"
-                  value={year}
-                  min={MIN_YEAR}
-                  max={MAX_YEAR}
-                  onChange={(e) => handleYearChange(e.target.value)}
-                  className="h-10 w-full rounded-lg border bg-white px-3 text-sm sm:w-28"
-                />
+  type="number"
+  value={yearInput}
+  min={MIN_YEAR}
+  max={MAX_YEAR}
+  onChange={(e) => setYearInput(e.target.value)}
+  onBlur={() => {
+    const n = Number(yearInput);
+    if (!Number.isNaN(n)) {
+      const clamped = Math.min(Math.max(n, MIN_YEAR), MAX_YEAR);
+      setYear(clamped);
+      setYearInput(String(clamped));
+    }
+  }}
+  onKeyDown={(e) => {
+    if (e.key === "Enter") e.currentTarget.blur();
+  }}
+  className="h-10 w-full rounded-lg border bg-white px-3 text-sm sm:w-28"
+/>
+
               </div>
 
               <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-2">
