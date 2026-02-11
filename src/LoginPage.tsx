@@ -21,28 +21,25 @@ export default function LoginPage({ onLogin, onShowRegister }: LoginPageProps) {
 
     try {
       // 🔥 API call (optional)
-      // const res = await fetch("http://127.0.0.1:5000/auth/login", {
-      //   method: "POST",
-      //   headers: { "Content-Type": "application/json" },
-      //   body: JSON.stringify({
-      //     username: username.trim(),
-      //     password,
-      //   }),
-      // });
+      const res = await fetch("https://backend-m7hv.onrender.com/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: username.trim(),
+          password,
+        }),
+      });
 
-      // if (!res.ok) {
-      //   const err = await res.json();
-      //   setError(err.error || "Login failed");
-      //   return;
-      // }
+      if (!res.ok) {
+        const err = await res.json();
+        setError(err.error || "Login failed");
+        return;
+      }
 
-      // const data = await res.json();
+      const data = await res.json();
 
       // ✅ Dummy login (your example style)
-      const data = {
-        username: username.trim(),
-        token: "dummy_token_123",
-      };
+     
 
       if (!username.trim() || !password.trim()) {
         setError("Username and password are required.");

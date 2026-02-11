@@ -301,7 +301,7 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
     async function loadMonth() {
       try {
         const res = await fetch(
-          `http://127.0.0.1:5000/events/month?year=${year}&month=${monthIndex + 1}`,
+          `https://backend-m7hv.onrender.com/events/month?year=${year}&month=${monthIndex + 1}`,
           {
             headers: {
               Authorization: `Bearer ${session.token}`,
@@ -353,7 +353,7 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
       )
     );
 
-    await fetch("http://127.0.0.1:5000/events/cell", {
+    await fetch("https://backend-m7hv.onrender.com/events/cell", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -371,7 +371,7 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
     if (!confirm("Clear ALL events for this month?")) return;
 
     await fetch(
-      `http://127.0.0.1:5000/events/month?year=${year}&month=${monthIndex + 1}`,
+      `https://backend-m7hv.onrender.com/events/month?year=${year}&month=${monthIndex + 1}`,
       {
         method: "DELETE",
         headers: {
@@ -395,7 +395,7 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
       })),
     };
 
-    await fetch("http://127.0.0.1:5000/events/bulk", {
+    await fetch("https://backend-m7hv.onrender.com/events/bulk", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
