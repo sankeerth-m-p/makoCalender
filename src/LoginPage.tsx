@@ -113,7 +113,7 @@ export default function LoginPage({ onLogin, onShowRegister }: LoginPageProps) {
             Login
           </button>
 
-          <div className="text-center text-xs text-slate-500">
+          {/* <div className="text-center text-xs text-slate-500">
             Don't have an account?{" "}
             <button
               type="button"
@@ -122,7 +122,7 @@ export default function LoginPage({ onLogin, onShowRegister }: LoginPageProps) {
             >
               Register
             </button>
-          </div>
+          </div> */}
         </form>
       </div>
     </div>
