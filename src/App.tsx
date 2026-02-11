@@ -256,7 +256,7 @@ interface AppProps {
   onLogout: () => void;
 }
 
-export default function App({ session, onLogout }: AppProps): JSX.Element {
+export default function App({ session, onLogout }: AppProps) {
   const now = new Date();
   const safeYear = Math.min(Math.max(now.getFullYear(), MIN_YEAR), MAX_YEAR);
 
@@ -375,7 +375,7 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
       rows: rowsToUpload.map((r) => ({
         dateISO: r.dateISO,
         events: Object.fromEntries(
-          Object.entries(r.events).filter(([_, v]) => v && v.trim() !== "")
+          Object.entries(r.events).filter(([, v]) => v && v.trim() !== "")
         ),
       })),
     };
@@ -474,6 +474,7 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
   }
 
   function openEventModal(dateISO: string) {
+    setSelectedDateISO(dateISO);
     setEditingDate(dateISO);
     setShowEventModal(true);
   }
@@ -728,21 +729,17 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
           {view === 'month' && (
             <MonthView
               weeks={calendarWeeks}
-              year={year}
-              monthIndex={monthIndex}
               eventsByDate={eventsByDate}
               selectedDateISO={selectedDateISO}
               today={today}
-              onDateClick={openEventModal}
+              onDateSelect={setSelectedDateISO}
+              onAddEvent={openEventModal}
             />
           )}
 
           {view === 'week' && (
             <WeekView
-              year={year}
-              monthIndex={monthIndex}
               selectedDateISO={selectedDateISO}
-              eventsByDate={eventsByDate}
               today={today}
             />
           )}
@@ -753,7 +750,6 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
               selectedDateISO={selectedDateISO}
               setSelectedDateISO={setSelectedDateISO}
               updateCell={updateCell}
-              clearMonth={clearMonth}
             />
           )}
         </div>
@@ -839,7 +835,7 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
                   value={pasteText}
                   onChange={(e) => setPasteText(e.target.value)}
                   placeholder="Paste copied table from Google Sheets (Date + Event 1..Event 10)"
-                  className="w-full min-h-[150px] px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm resize-y"
+                  className="w-full min-h-37.5 px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm resize-y"
                 />
                 <div className="mt-3 flex gap-2">
                   <button
@@ -902,23 +898,21 @@ export default function App({ session, onLogout }: AppProps): JSX.Element {
 ======================= */
 interface MonthViewProps {
   weeks: (CalendarCell | null)[][];
-  year: number;
-  monthIndex: number;
   eventsByDate: Map<string, string[]>;
   selectedDateISO: string;
   today: string;
-  onDateClick: (dateISO: string) => void;
+  onDateSelect: (dateISO: string) => void;
+  onAddEvent: (dateISO: string) => void;
 }
 
 function MonthView({
   weeks,
-  year,
-  monthIndex,
   eventsByDate,
   selectedDateISO,
   today,
-  onDateClick,
-}: MonthViewProps): JSX.Element {
+  onDateSelect,
+  onAddEvent,
+}: MonthViewProps) {
   return (
     <div className="h-full flex flex-col">
       {/* Weekday Headers */}
@@ -954,11 +948,23 @@ function MonthView({
               return (
                 <div
                   key={ci}
-                  onClick={() => onDateClick(cell.dateISO)}
-                  className={`border-r border-b border-slate-200 p-2 cursor-pointer transition-colors ${
+                  onClick={() => onDateSelect(cell.dateISO)}
+                  className={`group relative border-r border-b border-slate-200 p-2 cursor-pointer transition-colors ${
                     isSelected ? 'bg-blue-50' : 'bg-white hover:bg-slate-50'
                   }`}
                 >
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAddEvent(cell.dateISO);
+                    }}
+                    className="absolute top-1 right-1 h-6 w-6 rounded-full border border-blue-200 bg-white text-blue-600 opacity-0 transition-opacity hover:bg-blue-50 group-hover:opacity-100 focus:opacity-100"
+                    aria-label={`Add event for ${cell.dateISO}`}
+                  >
+                    +
+                  </button>
+
                   <div
                     className={`text-xs mb-1 inline-flex items-center justify-center w-6 h-6 rounded-full ${
                       isToday ? 'bg-blue-600 text-white font-bold' : 'text-slate-600'
@@ -967,20 +973,15 @@ function MonthView({
                     {cell.day}
                   </div>
 
-                  <div className="text-xs mt-1 space-y-1">
-                    {events.slice(0, 3).map((ev, idx) => (
+                  <div className="mt-1 max-h-27 space-y-1 overflow-y-auto pr-1 text-xs">
+                    {events.map((ev, idx) => (
                       <div
                         key={idx}
-                        className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded truncate"
+                        className="min-h-5 bg-blue-100 text-blue-800 px-2 py-0.5 rounded truncate"
                       >
                         {ev}
                       </div>
                     ))}
-                    {events.length > 3 && (
-                      <div className="text-slate-500 text-[10px]">
-                        +{events.length - 3} more
-                      </div>
-                    )}
                   </div>
                 </div>
               );
@@ -996,20 +997,14 @@ function MonthView({
    WEEK VIEW
 ======================= */
 interface WeekViewProps {
-  year: number;
-  monthIndex: number;
   selectedDateISO: string;
-  eventsByDate: Map<string, string[]>;
   today: string;
 }
 
 function WeekView({
-  year,
-  monthIndex,
   selectedDateISO,
-  eventsByDate,
   today,
-}: WeekViewProps): JSX.Element {
+}: WeekViewProps) {
   const selectedDate = new Date(selectedDateISO);
   const dayOfWeek = selectedDate.getDay();
   const weekStart = new Date(selectedDate);
@@ -1058,10 +1053,10 @@ function WeekView({
               <div className="border-r border-b border-slate-200 p-2 text-right text-xs text-slate-500">
                 {hour.toString().padStart(2, '0')}:00
               </div>
-              {weekDays.map((d, idx) => (
+              {weekDays.map((_d, idx) => (
                 <div
                   key={idx}
-                  className="border-r border-b border-slate-200 min-h-[60px] bg-white"
+                  className="border-r border-b border-slate-200 min-h-15 bg-white"
                 />
               ))}
             </React.Fragment>
@@ -1080,7 +1075,6 @@ interface EventsGridViewProps {
   selectedDateISO: string;
   setSelectedDateISO: (dateISO: string) => void;
   updateCell: (dateISO: string, col: string, value: string) => void;
-  clearMonth: () => void;
 }
 
 function EventsGridView({
@@ -1088,20 +1082,19 @@ function EventsGridView({
   selectedDateISO,
   setSelectedDateISO,
   updateCell,
-  clearMonth,
-}: EventsGridViewProps): JSX.Element {
+}: EventsGridViewProps) {
   return (
     <div className="h-full overflow-auto">
-      <table className="w-full min-w-[1400px] border-collapse">
+      <table className="w-full min-w-350 border-collapse">
         <thead>
           <tr className="bg-slate-50 sticky top-0 z-10">
-            <th className="sticky left-0 z-11 min-w-[140px] border border-slate-200 px-3 py-3 text-left text-sm font-semibold text-slate-700 bg-slate-50">
+            <th className="sticky left-0 z-11 min-w-35 border border-slate-200 px-3 py-3 text-left text-sm font-semibold text-slate-700 bg-slate-50">
               Date
             </th>
             {EVENT_COLS.map((c) => (
               <th
                 key={c}
-                className="min-w-[140px] border border-slate-200 px-3 py-3 text-left text-sm font-semibold text-slate-700"
+                className="min-w-35 border border-slate-200 px-3 py-3 text-left text-sm font-semibold text-slate-700"
               >
                 {c}
               </th>
