@@ -295,15 +295,18 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
         {/* Calendar/Events View */}
         <div className="flex-1 overflow-auto bg-white">
           {view === "month" && (
-            <MonthView
-              weeks={calendarWeeks}
-              year={year}
-              monthIndex={monthIndex}
-              eventsByDate={eventsByDate}
-              selectedDateISO={selectedDateISO}
-              today={today}
-              onDateClick={openEventModal}
-            />
+           <MonthView
+  weeks={calendarWeeks}
+  eventsByDate={eventsByDate}
+  selectedDateISO={selectedDateISO}
+  today={today}
+  onDateSelect={setSelectedDateISO}
+  onAddEvent={(dateISO) => {
+    setEditingDate(dateISO);
+    setShowEventModal(true);
+  }}
+/>
+
           )}
 
           {view === "week" && (
