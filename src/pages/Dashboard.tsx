@@ -16,6 +16,8 @@ import TopBar from "../layout/TopBar";
 import EventsGridView from "../views/EventsGridView";
 import MonthView from "../views/MonthView";
 import WeekView from "../views/WeekView";
+import * as XLSX from "xlsx";
+import { toPng } from "html-to-image";
 
 interface DashboardProps {
   session: Session;
@@ -25,6 +27,14 @@ interface DashboardProps {
 export default function Dashboard({ session, onLogout }: DashboardProps) {
   const now = new Date();
   const safeYear = Math.min(Math.max(now.getFullYear(), MIN_YEAR), MAX_YEAR);
+// 🔽 Export refs
+const monthRef = useRef<HTMLDivElement>(null);
+const weekRef = useRef<HTMLDivElement>(null);
+const eventsRef = useRef<HTMLDivElement>(null);
+
+// 🔽 Download dropdown
+const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+const downloadMenuRef = useRef<HTMLDivElement>(null);
 
   const [view, setView] = useState<ViewType>("month");
   const [year, setYear] = useState<number>(safeYear);
@@ -45,6 +55,31 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
 
   const [miniMonthIndex, setMiniMonthIndex] = useState<number>(now.getMonth());
   const [miniYear, setMiniYear] = useState<number>(safeYear);
+useEffect(() => {
+  function handleClickOutside(e: MouseEvent) {
+    if (
+      showDownloadMenu &&
+      downloadMenuRef.current &&
+      !downloadMenuRef.current.contains(e.target as Node)
+    ) {
+      setShowDownloadMenu(false);
+    }
+  }
+
+  document.addEventListener("mousedown", handleClickOutside);
+  return () => document.removeEventListener("mousedown", handleClickOutside);
+}, [showDownloadMenu]);
+
+useEffect(() => {
+  function handleEsc(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      setShowDownloadMenu(false);
+    }
+  }
+
+  document.addEventListener("keydown", handleEsc);
+  return () => document.removeEventListener("keydown", handleEsc);
+}, []);
 
   useEffect(() => {
     setRows(buildMonthRows(year, monthIndex));
@@ -257,22 +292,66 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
 
   const today = new Date().toISOString().split("T")[0];
   const selectedEvents = eventsByDate.get(selectedDateISO) || [];
+async function downloadPNG() {
+  const target =
+    view === "month"
+      ? monthRef.current
+      : view === "week"
+      ? weekRef.current
+      : eventsRef.current;
+
+  if (!target) return;
+
+  const dataUrl = await toPng(target, {
+    cacheBust: true,
+    pixelRatio: 2,
+    backgroundColor: "#ffffff",
+  });
+
+  const link = document.createElement("a");
+  link.download = `${view}-${monthIndex + 1}-${year}.png`;
+  link.href = dataUrl;
+  link.click();
+}
+
+function downloadExcel() {
+  const aoa: any[][] = [];
+
+  aoa.push([`makoCalendar - ${year}`]);
+  aoa.push(["Date", ...EVENT_COLS]);
+
+  rows.forEach((r) => {
+    aoa.push([r.dateISO, ...EVENT_COLS.map((c) => r.events[c] || "")]);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const wb = XLSX.utils.book_new();
+
+  XLSX.utils.book_append_sheet(wb, ws, `${monthIndex + 1}-${year}`);
+  XLSX.writeFile(wb, `calendar-${monthIndex + 1}-${year}.xlsx`);
+}
 
   return (
     <div className="min-h-screen bg-slate-50">
       <TopBar session={session} onLogout={onLogout} />
 
       <DateBar
-        monthIndex={monthIndex}
-        setMonthIndex={setMonthIndex}
-        year={year}
-        setYear={setYear}
-        view={view}
-        setView={setView}
-        goToToday={goToToday}
-        prevMonth={prevMonth}
-        nextMonth={nextMonth}
-      />
+  monthIndex={monthIndex}
+  setMonthIndex={setMonthIndex}
+  year={year}
+  setYear={setYear}
+  view={view}
+  setView={setView}
+  goToToday={goToToday}
+  prevMonth={prevMonth}
+  nextMonth={nextMonth}
+  showDownloadMenu={showDownloadMenu}
+  setShowDownloadMenu={setShowDownloadMenu}
+  onDownloadPNG={downloadPNG}
+  onDownloadExcel={downloadExcel}
+  downloadMenuRef={downloadMenuRef}
+/>
+
 
       {/* Main Content */}
       <div className="flex h-[calc(100vh-140px)]">
@@ -295,6 +374,9 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
         {/* Calendar/Events View */}
         <div className="flex-1 overflow-auto bg-white">
           {view === "month" && (
+            
+<div ref={monthRef} className="h-full">
+
            <MonthView
   weeks={calendarWeeks}
   eventsByDate={eventsByDate}
@@ -305,11 +387,12 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     setEditingDate(dateISO);
     setShowEventModal(true);
   }}
-/>
+/></div>
 
           )}
 
        {view === "week" && (
+         <div ref={weekRef} className="h-full">
   <WeekView
     year={year}
     monthIndex={monthIndex}
@@ -324,18 +407,18 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       setYear(d.getFullYear());
       setMonthIndex(d.getMonth());
     }}
-  />
+  /></div>
 )}
 
 
-          {view === "events" && (
+          {view === "events" && (  <div ref={eventsRef} className="h-full">
             <EventsGridView
               rows={rows}
               selectedDateISO={selectedDateISO}
               setSelectedDateISO={setSelectedDateISO}
               updateCell={updateCell}
               clearMonth={clearMonth}
-            />
+            /></div>
           )}
         </div>
       </div>

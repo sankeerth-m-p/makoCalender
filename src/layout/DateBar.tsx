@@ -18,6 +18,11 @@ interface DateBarProps {
   goToToday: () => void;
   prevMonth: () => void;
   nextMonth: () => void;
+   showDownloadMenu: boolean;
+  setShowDownloadMenu: (v: boolean) => void;
+  onDownloadPNG: () => void;
+  onDownloadExcel: () => void;
+  downloadMenuRef: React.RefObject<HTMLDivElement>;
 }
 function YearDropdown({
   year,
@@ -101,7 +106,13 @@ export default function DateBar({
   goToToday,
   prevMonth,
   nextMonth,
+  showDownloadMenu,
+  setShowDownloadMenu,
+  onDownloadPNG,
+  onDownloadExcel,
+  downloadMenuRef,
 }: DateBarProps) {
+
   return (
     <div className="bg-white border-b border-slate-200 px-6 py-4">
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -166,40 +177,80 @@ export default function DateBar({
         </div>
 
         {/* RIGHT SECTION – VIEW SWITCH */}
-        <div className="flex gap-1">
-          <button
-            onClick={() => setView("month")}
-            className={`px-4 py-2 text-sm font-medium transition-colors ${
-              view === "month"
-                ? "bg-blue-600 text-white"
-                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-            } rounded-l-md border border-slate-300`}
-          >
-            Month
-          </button>
+       {/* RIGHT SECTION – VIEW SWITCH + DOWNLOAD */}
+<div className="flex items-center gap-2">
+  <div className="flex gap-1">
+    <button
+      onClick={() => setView("month")}
+      className={`px-4 py-2 text-sm font-medium transition-colors ${
+        view === "month"
+          ? "bg-blue-600 text-white"
+          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+      } rounded-l-md border border-slate-300`}
+    >
+      Month
+    </button>
 
-          <button
-            onClick={() => setView("week")}
-            className={`px-4 py-2 text-sm font-medium transition-colors ${
-              view === "week"
-                ? "bg-blue-600 text-white"
-                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-            } border-t border-b border-slate-300`}
-          >
-            Week
-          </button>
+    <button
+      onClick={() => setView("week")}
+      className={`px-4 py-2 text-sm font-medium transition-colors ${
+        view === "week"
+          ? "bg-blue-600 text-white"
+          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+      } border-t border-b border-slate-300`}
+    >
+      Week
+    </button>
 
-          <button
-            onClick={() => setView("events")}
-            className={`px-4 py-2 text-sm font-medium transition-colors ${
-              view === "events"
-                ? "bg-blue-600 text-white"
-                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-            } rounded-r-md border border-slate-300`}
-          >
-            Events
-          </button>
-        </div>
+    <button
+      onClick={() => setView("events")}
+      className={`px-4 py-2 text-sm font-medium transition-colors ${
+        view === "events"
+          ? "bg-blue-600 text-white"
+          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+      } rounded-r-md border border-slate-300`}
+    >
+      Events
+    </button>
+  </div>
+
+  {/* DOWNLOAD DROPDOWN */}
+  <div className="relative" ref={downloadMenuRef}>
+    <button
+      onClick={() => setShowDownloadMenu(!showDownloadMenu)}
+      className="px-4 py-2 bg-slate-900 text-white rounded-md text-sm font-medium"
+    >
+      Download ▾
+    </button>
+
+    {showDownloadMenu && (
+      <div className="absolute right-0 mt-2 w-44 bg-white border border-slate-200 rounded-md shadow-lg z-50">
+        <button
+          onClick={() => {
+            setShowDownloadMenu(false);
+            onDownloadPNG();
+          }}
+          className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50"
+        >
+          PNG Image
+        </button>
+
+        <button
+          onClick={() => {
+            setShowDownloadMenu(false);
+            onDownloadExcel();
+          }}
+          className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50"
+        >
+          Excel (.xlsx)
+        </button>
+      </div>
+    )}
+  </div>
+</div>
+
+   
+
 
       </div>
     </div>
