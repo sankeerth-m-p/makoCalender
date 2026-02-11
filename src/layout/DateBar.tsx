@@ -21,7 +21,7 @@ interface DateBarProps {
    showDownloadMenu: boolean;
   setShowDownloadMenu: (v: boolean) => void;
   onDownloadPNG: () => void;
-  onDownloadExcel: () => void;
+  onDownloadExcel: () => void; onSharePNG: () => void;
   downloadMenuRef: React.RefObject<HTMLDivElement>;
 }
 function YearDropdown({
@@ -109,7 +109,7 @@ export default function DateBar({
   showDownloadMenu,
   setShowDownloadMenu,
   onDownloadPNG,
-  onDownloadExcel,
+  onDownloadExcel, onSharePNG,
   downloadMenuRef,
 }: DateBarProps) {
 
@@ -215,13 +215,19 @@ export default function DateBar({
   </div>
 
   {/* DOWNLOAD DROPDOWN */}
-  <div className="relative" ref={downloadMenuRef}>
+  <div className="relative gap-2 flex" ref={downloadMenuRef}>
     <button
       onClick={() => setShowDownloadMenu(!showDownloadMenu)}
       className="px-4 py-2 bg-slate-900 text-white rounded-md text-sm font-medium"
     >
       Download ▾
     </button>
+<button
+  onClick={onSharePNG}
+  className="px-4 py-2 bg-slate-900 text-white rounded-md text-sm font-medium hover:bg-slate-800"
+>
+  Share
+</button>
 
     {showDownloadMenu && (
       <div className="absolute right-0 mt-2 w-44 bg-white border border-slate-200 rounded-md shadow-lg z-50">

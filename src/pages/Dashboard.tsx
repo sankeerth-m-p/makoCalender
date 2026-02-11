@@ -292,6 +292,48 @@ useEffect(() => {
 
   const today = new Date().toISOString().split("T")[0];
   const selectedEvents = eventsByDate.get(selectedDateISO) || [];
+  async function sharePNG() {
+  const target =
+    view === "month"
+      ? monthRef.current
+      : view === "week"
+      ? weekRef.current
+      : eventsRef.current;
+
+  if (!target) return;
+
+  const dataUrl = await toPng(target, {
+    cacheBust: true,
+    pixelRatio: 2,
+    backgroundColor: "#ffffff",
+  });
+
+  // Convert base64 to Blob
+  const res = await fetch(dataUrl);
+  const blob = await res.blob();
+
+  const file = new File(
+    [blob],
+    `calendar-${view}-${monthIndex + 1}-${year}.png`,
+    { type: "image/png" }
+  );
+
+  // ✅ Web Share API
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    await navigator.share({
+      title: "makoCalendar",
+      text: `Sharing ${view} view`,
+      files: [file],
+    });
+  } else {
+    // Fallback: download
+    const link = document.createElement("a");
+    link.href = dataUrl;
+    link.download = file.name;
+    link.click();
+  }
+}
+
 async function downloadPNG() {
   const target =
     view === "month"
@@ -350,6 +392,7 @@ function downloadExcel() {
   onDownloadPNG={downloadPNG}
   onDownloadExcel={downloadExcel}
   downloadMenuRef={downloadMenuRef}
+  onSharePNG={sharePNG}
 />
 
 
