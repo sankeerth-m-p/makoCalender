@@ -91,7 +91,7 @@ export default function MonthView({
                           e.stopPropagation();
                           onAddEvent(cell.dateISO);
                         }}
-                        className="h-7  w-full rounded-md border border-blue-200 bg-blue-50 text-sm font-semibold text-blue-700 opacity-0 transition-opacity hover:bg-blue-100 group-hover:opacity-100 focus:opacity-100"
+                        className="h-7 mt-1  w-full rounded-md border border-blue-200 bg-blue-50 text-sm font-semibold text-blue-700 opacity-0 transition-opacity hover:bg-blue-100 group-hover:opacity-100 focus:opacity-100"
                         aria-label={`Add event for ${cell.dateISO}`}
                       >
                         + 
