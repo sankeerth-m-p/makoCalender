@@ -1,4 +1,4 @@
-import React from "react";
+
 import { DOW, pad2 } from "../calendar/calendarUtils";
 
 interface WeekViewProps {

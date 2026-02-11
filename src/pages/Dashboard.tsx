@@ -34,8 +34,7 @@ const eventsRef = useRef<HTMLDivElement>(null);
 
 // 🔽 Download dropdown
 const [showDownloadMenu, setShowDownloadMenu] = useState(false);
-const downloadMenuRef = useRef<HTMLDivElement>(null);
-
+const downloadMenuRef = React.useRef<HTMLDivElement | null>(null);
   const [view, setView] = useState<ViewType>("month");
   const [year, setYear] = useState<number>(safeYear);
   const [monthIndex, setMonthIndex] = useState<number>(now.getMonth());
@@ -277,10 +276,10 @@ useEffect(() => {
     }
   }
 
-  function openEventModal(dateISO: string) {
-    setEditingDate(dateISO);
-    setShowEventModal(true);
-  }
+  // function openEventModal(dateISO: string) {
+  //   setEditingDate(dateISO);
+  //   setShowEventModal(true);
+  // }
 
   function saveEventFromModal() {
     const value = (document.getElementById("eventInput") as HTMLInputElement)?.value || "";

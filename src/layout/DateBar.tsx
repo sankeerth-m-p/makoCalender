@@ -7,6 +7,7 @@ import {
 import { MAX_YEAR, MIN_YEAR, MONTHS } from "../calendar/calendarUtils";
 import type { ViewType } from "../calendar/types";
 import React from "react";
+import type { RefObject } from "react";
 
 interface DateBarProps {
   monthIndex: number;
@@ -22,7 +23,7 @@ interface DateBarProps {
   setShowDownloadMenu: (v: boolean) => void;
   onDownloadPNG: () => void;
   onDownloadExcel: () => void; onSharePNG: () => void;
-  downloadMenuRef: React.RefObject<HTMLDivElement>;
+downloadMenuRef: RefObject<HTMLDivElement | null>;
 }
 function YearDropdown({
   year,

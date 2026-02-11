@@ -10,7 +10,7 @@ type LoginPageProps = {
   onShowRegister: () => void;
 };
 
-export default function LoginPage({ onLogin, onShowRegister }: LoginPageProps) {
+export default function LoginPage({ onLogin }: LoginPageProps) {
   const [username, setUsername] = useState<string>("");
   const [password, setPassword] = useState<string>("");
   const [error, setError] = useState<string>("");
