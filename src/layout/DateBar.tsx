@@ -3,11 +3,11 @@ import {
   ChevronRight,
   CalendarDays,
   ChevronDown,
+  Menu,
 } from "lucide-react";
 import { MAX_YEAR, MIN_YEAR, MONTHS } from "../calendar/calendarUtils";
 import type { ViewType } from "../calendar/types";
 import React from "react";
-import type { RefObject } from "react";
 
 interface DateBarProps {
   monthIndex: number;
@@ -24,7 +24,10 @@ interface DateBarProps {
   onDownloadPNG: () => void;
   onDownloadExcel: () => void;
   onSharePNG: () => void;
-  downloadMenuRef: React.RefObject<HTMLDivElement>;
+ downloadMenuRef: React.RefObject<HTMLDivElement | null>;
+
+  // ⭐ NEW
+  onToggleSidebar: () => void;
 }
 
 function YearDropdown({
@@ -49,9 +52,7 @@ function YearDropdown({
 
   const YEARS = React.useMemo(() => {
     const list: number[] = [];
-    for (let y = MAX_YEAR; y >= MIN_YEAR; y--) {
-      list.push(y);
-    }
+    for (let y = MAX_YEAR; y >= MIN_YEAR; y--) list.push(y);
     return list;
   }, []);
 
@@ -59,9 +60,7 @@ function YearDropdown({
 
   React.useEffect(() => {
     if (open && selectedRef.current) {
-      selectedRef.current.scrollIntoView({
-        block: "center",
-      });
+      selectedRef.current.scrollIntoView({ block: "center" });
     }
   }, [open]);
 
@@ -116,12 +115,22 @@ export default function DateBar({
   onDownloadExcel,
   onSharePNG,
   downloadMenuRef,
+  onToggleSidebar,
 }: DateBarProps) {
   return (
     <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         {/* LEFT SECTION */}
         <div className="flex items-center gap-3 flex-wrap">
+          {/* ⭐ Mobile Sidebar Button */}
+          <button
+            onClick={onToggleSidebar}
+            className="lg:hidden h-10 w-10 flex items-center justify-center rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 transition"
+            title="Menu"
+          >
+            <Menu size={18} />
+          </button>
+
           {/* Title label */}
           <div className="flex items-center gap-2 text-base sm:text-lg font-bold text-slate-800">
             <CalendarDays size={18} className="text-teal-700" />

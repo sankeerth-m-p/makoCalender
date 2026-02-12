@@ -27,9 +27,14 @@ interface DashboardProps {
   onLogout: () => void;
 }
 
+type ModalMode = "add" | "edit";
+
 export default function Dashboard({ session, onLogout }: DashboardProps) {
   const now = new Date();
   const safeYear = Math.min(Math.max(now.getFullYear(), MIN_YEAR), MAX_YEAR);
+
+  // ⭐ RESPONSIVE: mobile sidebar drawer
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // 🔽 Export refs
   const monthRef = useRef<HTMLDivElement>(null);
@@ -46,7 +51,14 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
 
   const [showEventModal, setShowEventModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+
+  // ⭐ modal mode + which event is being edited
+  const [modalMode, setModalMode] = useState<ModalMode>("add");
   const [editingDate, setEditingDate] = useState<string>("");
+  const [editingEventIndex, setEditingEventIndex] = useState<number | null>(
+    null
+  );
+  const [editingEventValue, setEditingEventValue] = useState<string>("");
 
   const [rows, setRows] = useState<MonthRow[]>(buildMonthRows(year, monthIndex));
 
@@ -153,6 +165,15 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     () => buildCalendarGrid(miniYear, miniMonthIndex),
     [miniYear, miniMonthIndex]
   );
+
+  // ⭐ Helper: get actual column name from event index
+  function getColumnForEventIndex(dateISO: string, eventIndex: number): string {
+    const row = rows.find((r) => r.dateISO === dateISO);
+    if (!row) return "Event 1";
+
+    const cols = getEventColumnsFromEventData(row.events);
+    return cols[eventIndex] || cols[0] || "Event 1";
+  }
 
   async function updateCell(
     dateISO: string,
@@ -299,14 +320,69 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     }
   }
 
+  // ⭐ OPEN MODAL: ADD
+  function openAddEventModal(dateISO: string) {
+    setModalMode("add");
+    setEditingDate(dateISO);
+    setEditingEventIndex(null);
+    setEditingEventValue("");
+    setShowEventModal(true);
+
+    setTimeout(() => {
+      const el = document.getElementById("eventInput") as HTMLInputElement | null;
+      if (el) el.focus();
+    }, 0);
+  }
+
+  // ⭐ OPEN MODAL: EDIT
+  function openEditEventModal(
+    dateISO: string,
+    eventIndex: number,
+    currentValue: string
+  ) {
+    setModalMode("edit");
+    setEditingDate(dateISO);
+    setEditingEventIndex(eventIndex);
+    setEditingEventValue(currentValue || "");
+    setShowEventModal(true);
+
+    setTimeout(() => {
+      const el = document.getElementById("eventInput") as HTMLInputElement | null;
+      if (el) {
+        el.focus();
+        el.select();
+      }
+    }, 0);
+  }
+
+  // ⭐ SAVE (ADD OR EDIT)
   function saveEventFromModal() {
     const value =
       (document.getElementById("eventInput") as HTMLInputElement)?.value || "";
 
-    if (value.trim()) {
+    if (!value.trim()) {
+      setShowEventModal(false);
+      return;
+    }
+
+    if (modalMode === "add") {
       const targetRow = rows.find((r) => r.dateISO === editingDate);
       const nextCol = getNextEventColumn(targetRow?.events ?? {});
       updateCell(editingDate, nextCol, value);
+      setShowEventModal(false);
+      return;
+    }
+
+    if (modalMode === "edit") {
+      if (editingEventIndex === null) {
+        setShowEventModal(false);
+        return;
+      }
+
+      const col = getColumnForEventIndex(editingDate, editingEventIndex);
+      updateCell(editingDate, col, value);
+      setShowEventModal(false);
+      return;
     }
 
     setShowEventModal(false);
@@ -413,6 +489,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
         onDownloadExcel={downloadExcel}
         downloadMenuRef={downloadMenuRef}
         onSharePNG={sharePNG}
+        onToggleSidebar={() => setIsMobileSidebarOpen(true)}
       />
 
       {/* Main Content */}
@@ -431,6 +508,8 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
           selectedEvents={selectedEvents}
           setYear={setYear}
           setMonthIndex={setMonthIndex}
+          isMobileOpen={isMobileSidebarOpen}
+          setIsMobileOpen={setIsMobileSidebarOpen}
         />
 
         {/* Calendar / Events */}
@@ -445,10 +524,10 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
                     selectedDateISO={selectedDateISO}
                     today={today}
                     onDateSelect={setSelectedDateISO}
-                    onAddEvent={(dateISO) => {
-                      setEditingDate(dateISO);
-                      setShowEventModal(true);
-                    }}
+                    onAddEvent={(dateISO) => openAddEventModal(dateISO)}
+                    onEditEvent={(dateISO, eventIndex, value) =>
+                      openEditEventModal(dateISO, eventIndex, value)
+                    }
                   />
                 </div>
               )}
@@ -468,6 +547,9 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
                       setYear(d.getFullYear());
                       setMonthIndex(d.getMonth());
                     }}
+                    onEditEvent={(dateISO, eventIndex, value) =>
+                      openEditEventModal(dateISO, eventIndex, value)
+                    }
                   />
                 </div>
               )}
@@ -500,7 +582,9 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-6 py-4 border-b border-slate-200">
-              <h2 className="text-lg font-bold text-slate-900">Add Event</h2>
+              <h2 className="text-lg font-bold text-slate-900">
+                {modalMode === "add" ? "Add Event" : "Edit Event"}
+              </h2>
             </div>
 
             <div className="p-6 space-y-4">
@@ -512,9 +596,16 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
                   id="eventInput"
                   type="text"
                   placeholder="Add title"
+                  defaultValue={modalMode === "edit" ? editingEventValue : ""}
                   className="w-full h-11 px-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+
+              {modalMode === "edit" && (
+                <div className="text-xs text-slate-500">
+                  Tip: Click Save to update this event.
+                </div>
+              )}
             </div>
 
             <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-2">

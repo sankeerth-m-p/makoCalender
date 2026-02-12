@@ -31,23 +31,30 @@ export default function TopBar({ session, onLogout }: TopBarProps) {
       <div className="sticky top-0 z-40">
         <div className="bg-slate-700 border-b border-slate-600">
           <div className="px-4 sm:px-6 py-3">
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
               {/* Left: Brand */}
               <div className="flex items-center gap-3 min-w-0">
-                <div className="h-10 w-10 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center">
+                <div className="h-10 w-10 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center shrink-0">
                   <div className="h-5 w-5 rounded bg-sky-400/80" />
                 </div>
 
                 <div className="min-w-0">
-                  <h1 className="text-lg sm:text-xl font-semibold text-white tracking-tight leading-tight">
+                  <h1 className="text-lg sm:text-xl font-semibold text-white tracking-tight leading-tight truncate">
                     makoCalendar
                   </h1>
                 </div>
               </div>
 
               {/* Right: User + Logout */}
-              <div className="flex items-center gap-3 sm:gap-4">
-                {/* User */}
+              <div className="flex items-center gap-3 sm:gap-4 shrink-0">
+                {/* Mobile: show only initials */}
+                <div className="sm:hidden h-10 w-10 rounded-xl bg-sky-500/20 border border-sky-500/30 flex items-center justify-center">
+                  <span className="text-sm font-semibold text-sky-200">
+                    {initials}
+                  </span>
+                </div>
+
+                {/* Desktop user card */}
                 <div className="hidden sm:flex items-center gap-3 rounded-2xl bg-white/5 border border-white/10 px-3 py-2">
                   <div className="h-9 w-9 rounded-xl bg-sky-500/20 border border-sky-500/30 flex items-center justify-center">
                     <span className="text-sm font-semibold text-sky-200">
@@ -55,8 +62,8 @@ export default function TopBar({ session, onLogout }: TopBarProps) {
                     </span>
                   </div>
 
-                  <div className="leading-tight">
-                    <p className="text-sm font-medium text-white">
+                  <div className="leading-tight min-w-0">
+                    <p className="text-sm font-medium text-white truncate max-w-[220px]">
                       {session.username}
                     </p>
                     <p className="text-xs text-slate-300">Signed in</p>

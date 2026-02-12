@@ -7,6 +7,7 @@ import {
   ChevronDown,
   CalendarDays,
   List,
+  X,
 } from "lucide-react";
 import { DOW_SHORT, MONTHS } from "../calendar/calendarUtils";
 import type { CalendarCell } from "../calendar/types";
@@ -25,6 +26,10 @@ interface SidebarProps {
   selectedEvents: string[];
   setYear: (value: number) => void;
   setMonthIndex: (value: number) => void;
+
+  // ⭐ NEW FOR RESPONSIVE
+  isMobileOpen: boolean;
+  setIsMobileOpen: (v: boolean) => void;
 }
 
 export default function Sidebar({
@@ -41,6 +46,8 @@ export default function Sidebar({
   selectedEvents,
   setYear,
   setMonthIndex,
+  isMobileOpen,
+  setIsMobileOpen,
 }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = React.useState(false);
   const [showMiniCalendar, setShowMiniCalendar] = React.useState(true);
@@ -48,13 +55,34 @@ export default function Sidebar({
 
   const isTodaySelected = selectedDateISO === today;
 
-  return (
+  // Close drawer on ESC
+  React.useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setIsMobileOpen(false);
+    }
+    if (isMobileOpen) window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isMobileOpen, setIsMobileOpen]);
+
+  // Sidebar body (same UI)
+  const SidebarBody = (
     <div
-      className="bg-white border-r border-slate-200 overflow-y-auto transition-all"
+      className="bg-white border-r border-slate-200 overflow-y-auto transition-all h-full"
       style={{ width: isCollapsed ? 70 : 330 }}
     >
       {/* Top Controls */}
       <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-3 py-3">
+        {/* Mobile close button (ONLY inside drawer) */}
+        <div className="lg:hidden mb-2 flex justify-end">
+          <button
+            onClick={() => setIsMobileOpen(false)}
+            className="h-10 w-10 flex items-center justify-center border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition"
+            title="Close sidebar"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
         {isCollapsed ? (
           <div className="space-y-2">
             <button
@@ -175,6 +203,9 @@ export default function Sidebar({
                           setYear(miniYear);
                           setMonthIndex(miniMonthIndex);
                           setSelectedDateISO(cell.dateISO);
+
+                          // Close sidebar on mobile after selecting date
+                          setIsMobileOpen(false);
                         }}
                         className={`relative aspect-square text-xs flex items-center justify-center rounded-xl cursor-pointer transition
                           ${
@@ -249,5 +280,31 @@ export default function Sidebar({
         </div>
       )}
     </div>
+  );
+
+  return (
+    <>
+      {/* Desktop sidebar (unchanged) */}
+      <div className="hidden lg:block h-full">{SidebarBody}</div>
+
+      {/* Mobile drawer */}
+      <div className="lg:hidden">
+        {/* Overlay */}
+        {isMobileOpen && (
+          <div
+            className="fixed inset-0 z-40 bg-black/40"
+            onMouseDown={() => setIsMobileOpen(false)}
+          />
+        )}
+
+        {/* Drawer */}
+        <div
+          className={`fixed top-0 left-0 z-50 h-full transition-transform duration-200 ease-out
+                      ${isMobileOpen ? "translate-x-0" : "-translate-x-full"}`}
+        >
+          {SidebarBody}
+        </div>
+      </div>
+    </>
   );
 }
