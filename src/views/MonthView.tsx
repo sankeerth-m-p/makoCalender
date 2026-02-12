@@ -20,12 +20,12 @@ export default function MonthView({
 }: MonthViewProps) {
   return (
     <div className="h-full flex flex-col">
-      {/* Weekday Headers */}
-      <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50 sticky top-0 z-10">
+      {/* ✅ Weekday Headers (Green like reference image) */}
+      <div className="grid grid-cols-7 sticky top-0 z-10 bg-teal-700 border-b border-emerald-950/40">
         {DOW.map((day) => (
           <div
             key={day}
-            className="py-3 text-center text-xs font-semibold text-slate-600 uppercase border-r border-slate-200 last:border-r-0"
+            className="py-3 text-center text-xs font-semibold text-white uppercase border-r border-emerald-950/30 last:border-r-0"
           >
             {day}
           </div>
@@ -57,18 +57,15 @@ export default function MonthView({
                 <div
                   key={ci}
                   onClick={() => onDateSelect(cell.dateISO)}
-                  className={`group relative border-r border-b border-slate-200 p-2 cursor-pointer transition-colors ${
-                    isSelected ? "bg-blue-50" : "bg-white hover:bg-slate-50"
-                  }`}
+                  className={`group relative border-r border-b border-slate-200 p-2 cursor-pointer transition-colors
+                    ${isSelected ? "bg-blue-50" : "bg-white hover:bg-slate-50"}
+                  `}
                 >
-                  {/* Add Event Button */}
-                 
-
                   {/* Day Number */}
                   <div
                     className={`text-xs mb-1 inline-flex items-center justify-center w-6 h-6 rounded-full ${
                       isToday
-                        ? "bg-blue-600 text-white font-bold"
+                        ? "bg-slate-700 text-white font-bold"
                         : "text-slate-600"
                     }`}
                   >
@@ -85,17 +82,26 @@ export default function MonthView({
                         {ev}
                       </div>
                     ))}
-                  </div><button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onAddEvent(cell.dateISO);
-                        }}
-                        className="h-7 mt-1  w-full rounded-md border border-blue-200 bg-blue-50 text-sm font-semibold text-blue-700 opacity-0 transition-opacity hover:bg-blue-100 group-hover:opacity-100 focus:opacity-100"
-                        aria-label={`Add event for ${cell.dateISO}`}
-                      >
-                        + 
-                      </button>
+                  </div>
+
+                  {/* ✅ + Button EXACTLY like before (full width) */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAddEvent(cell.dateISO);
+                    }}
+                    className="h-7 mt-1 w-full rounded-md border border-blue-200 bg-blue-50 text-sm font-semibold text-blue-700
+                               opacity-0 transition-opacity hover:bg-blue-100 group-hover:opacity-100 focus:opacity-100"
+                    aria-label={`Add event for ${cell.dateISO}`}
+                  >
+                    +
+                  </button>
+
+                  {/* ✅ Selected border: GREEN contrast */}
+                  {isSelected && (
+                    <div className="grid grid-cols-7 sticky top-0 z-10 bg-emerald-100  border-emerald-200" />
+                  )}
                 </div>
               );
             })}
