@@ -10,7 +10,6 @@ import {
   MIN_YEAR,
   parseCSV,
   parseTSV,
-  sortEventColumns,
 } from "../calendar/calendarUtils";
 import type { MonthRow, Session, ViewType } from "../calendar/types";
 import DateBar from "../layout/DateBar";
@@ -26,6 +25,11 @@ interface DashboardProps {
   session: Session;
   onLogout: () => void;
 }
+
+type EventCellRef = {
+  dateISO: string;
+  col: string;
+};
 
 export default function Dashboard({ session, onLogout }: DashboardProps) {
   const now = new Date();
@@ -129,12 +133,16 @@ useEffect(() => {
   }, [rows]);
 
   const allEventCols = useMemo(() => {
-    const cols: string[] = [];
+    const nums: number[] = [];
     rows.forEach((r) => {
-      cols.push(...Object.keys(r.events));
+      Object.keys(r.events).forEach((key) => {
+        const n = getEventColumnNumber(key);
+        if (n) nums.push(n);
+      });
     });
-    const sorted = sortEventColumns(cols);
-    return sorted.length ? sorted : ["Event 1"];
+
+    const maxCol = Math.max(10, nums.length ? Math.max(...nums) : 0);
+    return Array.from({ length: maxCol }, (_, i) => `Event ${i + 1}`);
   }, [rows]);
 
   const calendarWeeks = useMemo(() => buildCalendarGrid(year, monthIndex), [year, monthIndex]);
@@ -148,9 +156,16 @@ useEffect(() => {
     if (!eventCol) return;
 
     setRows((prev) =>
-      prev.map((r) =>
-        r.dateISO === dateISO ? { ...r, events: { ...r.events, [col]: value } } : r
-      )
+      prev.map((r) => {
+        if (r.dateISO !== dateISO) return r;
+        const nextEvents = { ...r.events };
+        if (String(value || "").trim() === "") {
+          delete nextEvents[col];
+        } else {
+          nextEvents[col] = value;
+        }
+        return { ...r, events: nextEvents };
+      })
     );
 
     await fetch("https://backend-m7hv.onrender.com/events/cell", {
@@ -301,6 +316,43 @@ useEffect(() => {
       updateCell(editingDate, nextCol, value);
     }
     setShowEventModal(false);
+  }
+
+  async function deleteManyEvents(items: EventCellRef[]): Promise<void> {
+    const normalized = items
+      .map((item) => {
+        const eventCol = getEventColumnNumber(item.col);
+        return eventCol ? { dateISO: item.dateISO, eventCol, col: item.col } : null;
+      })
+      .filter((x): x is { dateISO: string; eventCol: number; col: string } => x !== null);
+
+    if (!normalized.length) return;
+
+    setRows((prev) =>
+      prev.map((r) => {
+        const targets = normalized.filter((item) => item.dateISO === r.dateISO);
+        if (!targets.length) return r;
+        const nextEvents = { ...r.events };
+        targets.forEach((item) => {
+          delete nextEvents[item.col];
+        });
+        return { ...r, events: nextEvents };
+      })
+    );
+
+    await fetch("https://backend-m7hv.onrender.com/events/delete-bulk", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.token}`,
+      },
+      body: JSON.stringify({
+        items: normalized.map((item) => ({
+          dateISO: item.dateISO,
+          eventCol: item.eventCol,
+        })),
+      }),
+    });
   }
 
   const today = new Date().toISOString().split("T")[0];
@@ -474,6 +526,7 @@ function downloadExcel() {
               selectedDateISO={selectedDateISO}
               setSelectedDateISO={setSelectedDateISO}
               updateCell={updateCell}
+              deleteManyEvents={deleteManyEvents}
               clearMonth={clearMonth}
             /></div>
           )}
