@@ -2,12 +2,15 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   buildCalendarGrid,
   buildMonthRows,
-  EVENT_COLS,
+  getEventColumnNumber,
+  getEventColumnsFromEventData,
+  getNextEventColumn,
   MAX_YEAR,
   mergeImportedIntoMonth,
   MIN_YEAR,
   parseCSV,
   parseTSV,
+  sortEventColumns,
 } from "../calendar/calendarUtils";
 import type { MonthRow, Session, ViewType } from "../calendar/types";
 import DateBar from "../layout/DateBar";
@@ -44,11 +47,8 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
   const [showEventModal, setShowEventModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [editingDate, setEditingDate] = useState<string>("");
-  const [editingEventCol, setEditingEventCol] = useState<string>("Event 1");
 
-  const [rows, setRows] = useState<MonthRow[]>(
-    buildMonthRows(year, monthIndex)
-  );
+  const [rows, setRows] = useState<MonthRow[]>(buildMonthRows(year, monthIndex));
 
   const [selectedDateISO, setSelectedDateISO] = useState<string>(() =>
     now.toISOString().split("T")[0]
@@ -127,12 +127,21 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
   const eventsByDate = useMemo(() => {
     const map = new Map<string, string[]>();
     rows.forEach((r) => {
-      const list = EVENT_COLS.map((c) => r.events[c]).filter(
-        (x) => String(x || "").trim() !== ""
-      );
+      const list = getEventColumnsFromEventData(r.events)
+        .map((c) => r.events[c])
+        .filter((x) => String(x || "").trim() !== "");
       map.set(r.dateISO, list);
     });
     return map;
+  }, [rows]);
+
+  const allEventCols = useMemo(() => {
+    const cols: string[] = [];
+    rows.forEach((r) => {
+      cols.push(...Object.keys(r.events));
+    });
+    const sorted = sortEventColumns(cols);
+    return sorted.length ? sorted : ["Event 1"];
   }, [rows]);
 
   const calendarWeeks = useMemo(
@@ -150,7 +159,8 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     col: string,
     value: string
   ): Promise<void> {
-    const eventCol = Number(col.replace("Event ", ""));
+    const eventCol = getEventColumnNumber(col);
+    if (!eventCol) return;
 
     setRows((prev) =>
       prev.map((r) =>
@@ -199,7 +209,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       rows: rowsToUpload.map((r) => ({
         dateISO: r.dateISO,
         events: Object.fromEntries(
-          Object.entries(r.events).filter(([_, v]) => v && v.trim() !== "")
+          Object.entries(r.events).filter(([, v]) => v && v.trim() !== "")
         ),
       })),
     };
@@ -226,12 +236,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       return;
     }
 
-    const merged = mergeImportedIntoMonth(
-      buildMonthRows(year, monthIndex),
-      incoming,
-      year,
-      monthIndex
-    );
+    const merged = mergeImportedIntoMonth(rows, incoming, year, monthIndex);
 
     setRows(merged);
     setPasteText("");
@@ -256,12 +261,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       return;
     }
 
-    const merged = mergeImportedIntoMonth(
-      buildMonthRows(year, monthIndex),
-      incoming,
-      year,
-      monthIndex
-    );
+    const merged = mergeImportedIntoMonth(rows, incoming, year, monthIndex);
 
     setRows(merged);
     await bulkUpload(merged);
@@ -302,9 +302,13 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
   function saveEventFromModal() {
     const value =
       (document.getElementById("eventInput") as HTMLInputElement)?.value || "";
+
     if (value.trim()) {
-      updateCell(editingDate, editingEventCol, value);
+      const targetRow = rows.find((r) => r.dateISO === editingDate);
+      const nextCol = getNextEventColumn(targetRow?.events ?? {});
+      updateCell(editingDate, nextCol, value);
     }
+
     setShowEventModal(false);
   }
 
@@ -373,13 +377,13 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
   }
 
   function downloadExcel() {
-    const aoa: any[][] = [];
+    const aoa: string[][] = [];
 
     aoa.push([`makoCalendar - ${year}`]);
-    aoa.push(["Date", ...EVENT_COLS]);
+    aoa.push(["Date", ...allEventCols]);
 
     rows.forEach((r) => {
-      aoa.push([r.dateISO, ...EVENT_COLS.map((c) => r.events[c] || "")]);
+      aoa.push([r.dateISO, ...allEventCols.map((c) => r.events[c] || "")]);
     });
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -472,6 +476,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
                 <div ref={eventsRef} className="h-full">
                   <EventsGridView
                     rows={rows}
+                    eventCols={allEventCols}
                     selectedDateISO={selectedDateISO}
                     setSelectedDateISO={setSelectedDateISO}
                     updateCell={updateCell}
@@ -500,24 +505,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
 
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  Event Column
-                </label>
-                <select
-                  value={editingEventCol}
-                  onChange={(e) => setEditingEventCol(e.target.value)}
-                  className="w-full h-11 px-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  {EVENT_COLS.map((col) => (
-                    <option key={col} value={col}>
-                      {col}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                <label className="block text-sm font-medium text-slate-700 mb-2">
                   Event Title
                 </label>
                 <input
@@ -558,9 +546,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-6 py-4 border-b border-slate-200">
-              <h2 className="text-lg font-bold text-slate-900">
-                Import Events
-              </h2>
+              <h2 className="text-lg font-bold text-slate-900">Import Events</h2>
             </div>
 
             <div className="p-5 space-y-5">

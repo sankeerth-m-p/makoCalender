@@ -110,8 +110,15 @@ export default function WeekView({
           const events = eventsByDate.get(dateISO) || [];
 
           return (
-            <div key={idx} className="p-2 min-h-[140px] bg-white">
-              <div className="text-xs mt-1 space-y-2">
+            <div
+              key={idx}
+              className="border-r border-slate-200 p-2 min-h-15 bg-white"
+            >
+              <div
+                className={`text-xs mt-1 space-y-1 ${
+                  events.length > 10 ? "max-h-56 overflow-y-auto pr-1" : ""
+                }`}
+              >
                 {events.map((ev, eventIdx) => (
                   <div
                     key={eventIdx}

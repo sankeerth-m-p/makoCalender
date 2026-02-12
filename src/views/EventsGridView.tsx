@@ -1,8 +1,8 @@
-import { EVENT_COLS } from "../calendar/calendarUtils";
 import type { MonthRow } from "../calendar/types";
 
 interface EventsGridViewProps {
   rows: MonthRow[];
+  eventCols: string[];
   selectedDateISO: string;
   setSelectedDateISO: (dateISO: string) => void;
   updateCell: (dateISO: string, col: string, value: string) => void;
@@ -11,6 +11,7 @@ interface EventsGridViewProps {
 
 export default function EventsGridView({
   rows,
+  eventCols,
   selectedDateISO,
   setSelectedDateISO,
   updateCell,
@@ -35,7 +36,7 @@ export default function EventsGridView({
               Date
             </th>
 
-            {EVENT_COLS.map((c) => (
+            {eventCols.map((c) => (
               <th
                 key={c}
                 className="
@@ -81,12 +82,10 @@ export default function EventsGridView({
                 >
                   {r.dateLabel}
                 </td>
-
-                {/* Cells */}
-                {EVENT_COLS.map((c) => (
+                {eventCols.map((c) => (
                   <td key={c} className="border border-slate-200 p-0">
                     <input
-                      value={r.events[c]}
+                      value={r.events[c] || ""}
                       onFocus={() => setSelectedDateISO(r.dateISO)}
                       onChange={(e) => updateCell(r.dateISO, c, e.target.value)}
                       className="
