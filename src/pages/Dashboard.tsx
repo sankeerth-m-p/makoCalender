@@ -27,14 +27,16 @@ interface DashboardProps {
 export default function Dashboard({ session, onLogout }: DashboardProps) {
   const now = new Date();
   const safeYear = Math.min(Math.max(now.getFullYear(), MIN_YEAR), MAX_YEAR);
-// 🔽 Export refs
-const monthRef = useRef<HTMLDivElement>(null);
-const weekRef = useRef<HTMLDivElement>(null);
-const eventsRef = useRef<HTMLDivElement>(null);
 
-// 🔽 Download dropdown
-const [showDownloadMenu, setShowDownloadMenu] = useState(false);
-const downloadMenuRef = React.useRef<HTMLDivElement | null>(null);
+  // 🔽 Export refs
+  const monthRef = useRef<HTMLDivElement>(null);
+  const weekRef = useRef<HTMLDivElement>(null);
+  const eventsRef = useRef<HTMLDivElement>(null);
+
+  // 🔽 Download dropdown
+  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+  const downloadMenuRef = useRef<HTMLDivElement>(null);
+
   const [view, setView] = useState<ViewType>("month");
   const [year, setYear] = useState<number>(safeYear);
   const [monthIndex, setMonthIndex] = useState<number>(now.getMonth());
@@ -44,7 +46,10 @@ const downloadMenuRef = React.useRef<HTMLDivElement | null>(null);
   const [editingDate, setEditingDate] = useState<string>("");
   const [editingEventCol, setEditingEventCol] = useState<string>("Event 1");
 
-  const [rows, setRows] = useState<MonthRow[]>(buildMonthRows(year, monthIndex));
+  const [rows, setRows] = useState<MonthRow[]>(
+    buildMonthRows(year, monthIndex)
+  );
+
   const [selectedDateISO, setSelectedDateISO] = useState<string>(() =>
     now.toISOString().split("T")[0]
   );
@@ -54,41 +59,45 @@ const downloadMenuRef = React.useRef<HTMLDivElement | null>(null);
 
   const [miniMonthIndex, setMiniMonthIndex] = useState<number>(now.getMonth());
   const [miniYear, setMiniYear] = useState<number>(safeYear);
-useEffect(() => {
-  function handleClickOutside(e: MouseEvent) {
-    if (
-      showDownloadMenu &&
-      downloadMenuRef.current &&
-      !downloadMenuRef.current.contains(e.target as Node)
-    ) {
-      setShowDownloadMenu(false);
+
+  // Close download menu outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (
+        showDownloadMenu &&
+        downloadMenuRef.current &&
+        !downloadMenuRef.current.contains(e.target as Node)
+      ) {
+        setShowDownloadMenu(false);
+      }
     }
-  }
 
-  document.addEventListener("mousedown", handleClickOutside);
-  return () => document.removeEventListener("mousedown", handleClickOutside);
-}, [showDownloadMenu]);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showDownloadMenu]);
 
-useEffect(() => {
-  function handleEsc(e: KeyboardEvent) {
-    if (e.key === "Escape") {
-      setShowDownloadMenu(false);
+  // ESC closes download menu
+  useEffect(() => {
+    function handleEsc(e: KeyboardEvent) {
+      if (e.key === "Escape") setShowDownloadMenu(false);
     }
-  }
 
-  document.addEventListener("keydown", handleEsc);
-  return () => document.removeEventListener("keydown", handleEsc);
-}, []);
+    document.addEventListener("keydown", handleEsc);
+    return () => document.removeEventListener("keydown", handleEsc);
+  }, []);
 
   useEffect(() => {
     setRows(buildMonthRows(year, monthIndex));
   }, [year, monthIndex]);
 
+  // Load month events
   useEffect(() => {
     async function loadMonth() {
       try {
         const res = await fetch(
-          `https://backend-m7hv.onrender.com/events/month?year=${year}&month=${monthIndex + 1}`,
+          `https://backend-m7hv.onrender.com/events/month?year=${year}&month=${
+            monthIndex + 1
+          }`,
           {
             headers: {
               Authorization: `Bearer ${session.token}`,
@@ -126,18 +135,28 @@ useEffect(() => {
     return map;
   }, [rows]);
 
-  const calendarWeeks = useMemo(() => buildCalendarGrid(year, monthIndex), [year, monthIndex]);
+  const calendarWeeks = useMemo(
+    () => buildCalendarGrid(year, monthIndex),
+    [year, monthIndex]
+  );
+
   const miniCalendarWeeks = useMemo(
     () => buildCalendarGrid(miniYear, miniMonthIndex),
     [miniYear, miniMonthIndex]
   );
 
-  async function updateCell(dateISO: string, col: string, value: string): Promise<void> {
+  async function updateCell(
+    dateISO: string,
+    col: string,
+    value: string
+  ): Promise<void> {
     const eventCol = Number(col.replace("Event ", ""));
 
     setRows((prev) =>
       prev.map((r) =>
-        r.dateISO === dateISO ? { ...r, events: { ...r.events, [col]: value } } : r
+        r.dateISO === dateISO
+          ? { ...r, events: { ...r.events, [col]: value } }
+          : r
       )
     );
 
@@ -159,7 +178,9 @@ useEffect(() => {
     if (!confirm("Clear ALL events for this month?")) return;
 
     await fetch(
-      `https://backend-m7hv.onrender.com/events/month?year=${year}&month=${monthIndex + 1}`,
+      `https://backend-m7hv.onrender.com/events/month?year=${year}&month=${
+        monthIndex + 1
+      }`,
       {
         method: "DELETE",
         headers: {
@@ -221,7 +242,9 @@ useEffect(() => {
     setShowImportModal(false);
   }
 
-  async function onUploadFile(e: React.ChangeEvent<HTMLInputElement>): Promise<void> {
+  async function onUploadFile(
+    e: React.ChangeEvent<HTMLInputElement>
+  ): Promise<void> {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -276,13 +299,9 @@ useEffect(() => {
     }
   }
 
-  // function openEventModal(dateISO: string) {
-  //   setEditingDate(dateISO);
-  //   setShowEventModal(true);
-  // }
-
   function saveEventFromModal() {
-    const value = (document.getElementById("eventInput") as HTMLInputElement)?.value || "";
+    const value =
+      (document.getElementById("eventInput") as HTMLInputElement)?.value || "";
     if (value.trim()) {
       updateCell(editingDate, editingEventCol, value);
     }
@@ -291,112 +310,109 @@ useEffect(() => {
 
   const today = new Date().toISOString().split("T")[0];
   const selectedEvents = eventsByDate.get(selectedDateISO) || [];
+
   async function sharePNG() {
-  const target =
-    view === "month"
-      ? monthRef.current
-      : view === "week"
-      ? weekRef.current
-      : eventsRef.current;
+    const target =
+      view === "month"
+        ? monthRef.current
+        : view === "week"
+        ? weekRef.current
+        : eventsRef.current;
 
-  if (!target) return;
+    if (!target) return;
 
-  const dataUrl = await toPng(target, {
-    cacheBust: true,
-    pixelRatio: 2,
-    backgroundColor: "#ffffff",
-  });
-
-  // Convert base64 to Blob
-  const res = await fetch(dataUrl);
-  const blob = await res.blob();
-
-  const file = new File(
-    [blob],
-    `calendar-${view}-${monthIndex + 1}-${year}.png`,
-    { type: "image/png" }
-  );
-
-  // ✅ Web Share API
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    await navigator.share({
-      title: "makoCalendar",
-      text: `Sharing ${view} view`,
-      files: [file],
+    const dataUrl = await toPng(target, {
+      cacheBust: true,
+      pixelRatio: 2,
+      backgroundColor: "#ffffff",
     });
-  } else {
-    // Fallback: download
+
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+
+    const file = new File(
+      [blob],
+      `calendar-${view}-${monthIndex + 1}-${year}.png`,
+      { type: "image/png" }
+    );
+
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({
+        title: "makoCalendar",
+        text: `Sharing ${view} view`,
+        files: [file],
+      });
+    } else {
+      const link = document.createElement("a");
+      link.href = dataUrl;
+      link.download = file.name;
+      link.click();
+    }
+  }
+
+  async function downloadPNG() {
+    const target =
+      view === "month"
+        ? monthRef.current
+        : view === "week"
+        ? weekRef.current
+        : eventsRef.current;
+
+    if (!target) return;
+
+    const dataUrl = await toPng(target, {
+      cacheBust: true,
+      pixelRatio: 2,
+      backgroundColor: "#ffffff",
+    });
+
     const link = document.createElement("a");
+    link.download = `${view}-${monthIndex + 1}-${year}.png`;
     link.href = dataUrl;
-    link.download = file.name;
     link.click();
   }
-}
 
-async function downloadPNG() {
-  const target =
-    view === "month"
-      ? monthRef.current
-      : view === "week"
-      ? weekRef.current
-      : eventsRef.current;
+  function downloadExcel() {
+    const aoa: any[][] = [];
 
-  if (!target) return;
+    aoa.push([`makoCalendar - ${year}`]);
+    aoa.push(["Date", ...EVENT_COLS]);
 
-  const dataUrl = await toPng(target, {
-    cacheBust: true,
-    pixelRatio: 2,
-    backgroundColor: "#ffffff",
-  });
+    rows.forEach((r) => {
+      aoa.push([r.dateISO, ...EVENT_COLS.map((c) => r.events[c] || "")]);
+    });
 
-  const link = document.createElement("a");
-  link.download = `${view}-${monthIndex + 1}-${year}.png`;
-  link.href = dataUrl;
-  link.click();
-}
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
 
-function downloadExcel() {
-  const aoa: any[][] = [];
-
-  aoa.push([`makoCalendar - ${year}`]);
-  aoa.push(["Date", ...EVENT_COLS]);
-
-  rows.forEach((r) => {
-    aoa.push([r.dateISO, ...EVENT_COLS.map((c) => r.events[c] || "")]);
-  });
-
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  const wb = XLSX.utils.book_new();
-
-  XLSX.utils.book_append_sheet(wb, ws, `${monthIndex + 1}-${year}`);
-  XLSX.writeFile(wb, `calendar-${monthIndex + 1}-${year}.xlsx`);
-}
+    XLSX.utils.book_append_sheet(wb, ws, `${monthIndex + 1}-${year}`);
+    XLSX.writeFile(wb, `calendar-${monthIndex + 1}-${year}.xlsx`);
+  }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-100">
       <TopBar session={session} onLogout={onLogout} />
 
       <DateBar
-  monthIndex={monthIndex}
-  setMonthIndex={setMonthIndex}
-  year={year}
-  setYear={setYear}
-  view={view}
-  setView={setView}
-  goToToday={goToToday}
-  prevMonth={prevMonth}
-  nextMonth={nextMonth}
-  showDownloadMenu={showDownloadMenu}
-  setShowDownloadMenu={setShowDownloadMenu}
-  onDownloadPNG={downloadPNG}
-  onDownloadExcel={downloadExcel}
-  downloadMenuRef={downloadMenuRef}
-  onSharePNG={sharePNG}
-/>
-
+        monthIndex={monthIndex}
+        setMonthIndex={setMonthIndex}
+        year={year}
+        setYear={setYear}
+        view={view}
+        setView={setView}
+        goToToday={goToToday}
+        prevMonth={prevMonth}
+        nextMonth={nextMonth}
+        showDownloadMenu={showDownloadMenu}
+        setShowDownloadMenu={setShowDownloadMenu}
+        onDownloadPNG={downloadPNG}
+        onDownloadExcel={downloadExcel}
+        downloadMenuRef={downloadMenuRef}
+        onSharePNG={sharePNG}
+      />
 
       {/* Main Content */}
-      <div className="flex h-[calc(100vh-140px)]">
+      <div className="flex h-[calc(100vh-128px)]">
         <Sidebar
           setShowImportModal={setShowImportModal}
           miniMonthIndex={miniMonthIndex}
@@ -413,108 +429,116 @@ function downloadExcel() {
           setMonthIndex={setMonthIndex}
         />
 
-        {/* Calendar/Events View */}
-        <div className="flex-1 overflow-auto bg-white">
-          {view === "month" && (
-            
-<div ref={monthRef} className="h-full">
+        {/* Calendar / Events */}
+        <div className="flex-1 overflow-hidden bg-slate-100">
+          <div className="h-full p-3">
+            <div className="h-full bg-white rounded-2xl border border-slate-200 shadow-sm overflow-auto">
+              {view === "month" && (
+                <div ref={monthRef} className="h-full">
+                  <MonthView
+                    weeks={calendarWeeks}
+                    eventsByDate={eventsByDate}
+                    selectedDateISO={selectedDateISO}
+                    today={today}
+                    onDateSelect={setSelectedDateISO}
+                    onAddEvent={(dateISO) => {
+                      setEditingDate(dateISO);
+                      setShowEventModal(true);
+                    }}
+                  />
+                </div>
+              )}
 
-           <MonthView
-  weeks={calendarWeeks}
-  eventsByDate={eventsByDate}
-  selectedDateISO={selectedDateISO}
-  today={today}
-  onDateSelect={setSelectedDateISO}
-  onAddEvent={(dateISO) => {
-    setEditingDate(dateISO);
-    setShowEventModal(true);
-  }}
-/></div>
+              {view === "week" && (
+                <div ref={weekRef} className="h-full">
+                  <WeekView
+                    year={year}
+                    monthIndex={monthIndex}
+                    selectedDateISO={selectedDateISO}
+                    eventsByDate={eventsByDate}
+                    today={today}
+                    onChangeWeek={(newDateISO) => {
+                      setSelectedDateISO(newDateISO);
 
-          )}
+                      const d = new Date(newDateISO);
+                      setYear(d.getFullYear());
+                      setMonthIndex(d.getMonth());
+                    }}
+                  />
+                </div>
+              )}
 
-       {view === "week" && (
-         <div ref={weekRef} className="h-full">
-  <WeekView
-    year={year}
-    monthIndex={monthIndex}
-    selectedDateISO={selectedDateISO}
-    eventsByDate={eventsByDate}
-    today={today}
-    onChangeWeek={(newDateISO) => {
-      setSelectedDateISO(newDateISO);
-
-      // 👇 keep month/year in sync when week crosses months
-      const d = new Date(newDateISO);
-      setYear(d.getFullYear());
-      setMonthIndex(d.getMonth());
-    }}
-  /></div>
-)}
-
-
-          {view === "events" && (  <div ref={eventsRef} className="h-full">
-            <EventsGridView
-              rows={rows}
-              selectedDateISO={selectedDateISO}
-              setSelectedDateISO={setSelectedDateISO}
-              updateCell={updateCell}
-              clearMonth={clearMonth}
-            /></div>
-          )}
+              {view === "events" && (
+                <div ref={eventsRef} className="h-full">
+                  <EventsGridView
+                    rows={rows}
+                    selectedDateISO={selectedDateISO}
+                    setSelectedDateISO={setSelectedDateISO}
+                    updateCell={updateCell}
+                    clearMonth={clearMonth}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Event Modal */}
       {showEventModal && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 px-4"
           onClick={() => setShowEventModal(false)}
         >
           <div
-            className="bg-white rounded-lg w-full max-w-md shadow-xl"
+            className="bg-white rounded-2xl w-full max-w-md shadow-2xl border border-slate-200"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-6 py-4 border-b border-slate-200">
-              <h2 className="text-xl font-semibold text-slate-800">Add Event</h2>
+              <h2 className="text-lg font-bold text-slate-900">Add Event</h2>
             </div>
+
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
                   Event Column
                 </label>
                 <select
                   value={editingEventCol}
                   onChange={(e) => setEditingEventCol(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full h-11 px-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   {EVENT_COLS.map((col) => (
-                    <option key={col} value={col}>{col}</option>
+                    <option key={col} value={col}>
+                      {col}
+                    </option>
                   ))}
                 </select>
               </div>
+
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
                   Event Title
                 </label>
                 <input
                   id="eventInput"
                   type="text"
                   placeholder="Add title"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full h-11 px-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
             </div>
+
             <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-2">
               <button
                 onClick={() => setShowEventModal(false)}
-                className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 transition-colors"
+                className="px-4 h-10 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 transition"
               >
                 Cancel
               </button>
               <button
                 onClick={saveEventFromModal}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                className="px-4 h-10 bg-teal-700 hover:bg-slate-700 text-white rounded-xl font-semibold transition"
               >
                 Save
               </button>
@@ -526,37 +550,43 @@ function downloadExcel() {
       {/* Import Modal */}
       {showImportModal && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 px-4"
           onClick={() => setShowImportModal(false)}
         >
           <div
-            className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-auto shadow-xl"
+            className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl border border-slate-200"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-6 py-4 border-b border-slate-200">
-              <h2 className="text-xl font-semibold text-slate-800">Import Events</h2>
+              <h2 className="text-lg font-bold text-slate-900">
+                Import Events
+              </h2>
             </div>
-            <div className="p-6 space-y-6">
+
+            <div className="p-5 space-y-5">
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">
                   Paste Template Data
                 </label>
+
                 <textarea
                   value={pasteText}
                   onChange={(e) => setPasteText(e.target.value)}
                   placeholder="Paste copied table from Google Sheets (Date + Event 1..Event 10)"
-                  className="w-full min-h-[150px] px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm resize-y"
+                  className="w-full min-h-[160px] px-3 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm resize-y"
                 />
+
                 <div className="mt-3 flex gap-2">
                   <button
                     onClick={applyPaste}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors font-medium"
+                    className="px-4 h-10 bg-teal-700 hover:bg-slate-700 text-white rounded-xl transition font-semibold"
                   >
                     Import Paste
                   </button>
+
                   <button
                     onClick={() => setPasteText("")}
-                    className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 transition-colors"
+                    className="px-4 h-10 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 transition font-semibold"
                   >
                     Clear
                   </button>
@@ -567,31 +597,40 @@ function downloadExcel() {
                 <label className="block text-sm font-semibold text-slate-700 mb-2">
                   Upload CSV File
                 </label>
+
                 <input
                   ref={fileRef}
                   type="file"
                   accept=".csv"
                   onChange={onUploadFile}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-700 file:cursor-pointer"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm
+                             file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0
+                             file:bg-teal-700 file:text-white hover:file:bg-slate-700
+                             file:cursor-pointer"
                 />
               </div>
 
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-md">
-                <div className="text-xs font-semibold text-slate-700 mb-1">CSV Format Required:</div>
-                <div className="text-xs text-slate-600">Date, Event 1, Event 2, ... Event 10</div>
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                <div className="text-xs font-bold text-slate-700 mb-1">
+                  CSV Format Required:
+                </div>
+                <div className="text-xs text-slate-600">
+                  Date, Event 1, Event 2, ... Event 10
+                </div>
               </div>
 
               <button
                 onClick={clearMonth}
-                className="w-full px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors font-medium"
+                className="w-full px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl transition font-semibold"
               >
                 Clear Month Data
               </button>
             </div>
+
             <div className="px-6 py-4 border-t border-slate-200 flex justify-end">
               <button
                 onClick={() => setShowImportModal(false)}
-                className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 transition-colors"
+                className="px-4 h-10 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 transition font-semibold"
               >
                 Close
               </button>
