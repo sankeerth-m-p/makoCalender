@@ -2,12 +2,15 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   buildCalendarGrid,
   buildMonthRows,
-  EVENT_COLS,
+  getEventColumnNumber,
+  getEventColumnsFromEventData,
+  getNextEventColumn,
   MAX_YEAR,
   mergeImportedIntoMonth,
   MIN_YEAR,
   parseCSV,
   parseTSV,
+  sortEventColumns,
 } from "../calendar/calendarUtils";
 import type { MonthRow, Session, ViewType } from "../calendar/types";
 import DateBar from "../layout/DateBar";
@@ -42,7 +45,6 @@ const downloadMenuRef = React.useRef<HTMLDivElement | null>(null);
   const [showEventModal, setShowEventModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [editingDate, setEditingDate] = useState<string>("");
-  const [editingEventCol, setEditingEventCol] = useState<string>("Event 1");
 
   const [rows, setRows] = useState<MonthRow[]>(buildMonthRows(year, monthIndex));
   const [selectedDateISO, setSelectedDateISO] = useState<string>(() =>
@@ -118,12 +120,21 @@ useEffect(() => {
   const eventsByDate = useMemo(() => {
     const map = new Map<string, string[]>();
     rows.forEach((r) => {
-      const list = EVENT_COLS.map((c) => r.events[c]).filter(
-        (x) => String(x || "").trim() !== ""
-      );
+      const list = getEventColumnsFromEventData(r.events)
+        .map((c) => r.events[c])
+        .filter((x) => String(x || "").trim() !== "");
       map.set(r.dateISO, list);
     });
     return map;
+  }, [rows]);
+
+  const allEventCols = useMemo(() => {
+    const cols: string[] = [];
+    rows.forEach((r) => {
+      cols.push(...Object.keys(r.events));
+    });
+    const sorted = sortEventColumns(cols);
+    return sorted.length ? sorted : ["Event 1"];
   }, [rows]);
 
   const calendarWeeks = useMemo(() => buildCalendarGrid(year, monthIndex), [year, monthIndex]);
@@ -133,7 +144,8 @@ useEffect(() => {
   );
 
   async function updateCell(dateISO: string, col: string, value: string): Promise<void> {
-    const eventCol = Number(col.replace("Event ", ""));
+    const eventCol = getEventColumnNumber(col);
+    if (!eventCol) return;
 
     setRows((prev) =>
       prev.map((r) =>
@@ -178,7 +190,7 @@ useEffect(() => {
       rows: rowsToUpload.map((r) => ({
         dateISO: r.dateISO,
         events: Object.fromEntries(
-          Object.entries(r.events).filter(([_, v]) => v && v.trim() !== "")
+          Object.entries(r.events).filter(([, v]) => v && v.trim() !== "")
         ),
       })),
     };
@@ -206,7 +218,7 @@ useEffect(() => {
     }
 
     const merged = mergeImportedIntoMonth(
-      buildMonthRows(year, monthIndex),
+      rows,
       incoming,
       year,
       monthIndex
@@ -234,7 +246,7 @@ useEffect(() => {
     }
 
     const merged = mergeImportedIntoMonth(
-      buildMonthRows(year, monthIndex),
+      rows,
       incoming,
       year,
       monthIndex
@@ -284,7 +296,9 @@ useEffect(() => {
   function saveEventFromModal() {
     const value = (document.getElementById("eventInput") as HTMLInputElement)?.value || "";
     if (value.trim()) {
-      updateCell(editingDate, editingEventCol, value);
+      const targetRow = rows.find((r) => r.dateISO === editingDate);
+      const nextCol = getNextEventColumn(targetRow?.events ?? {});
+      updateCell(editingDate, nextCol, value);
     }
     setShowEventModal(false);
   }
@@ -356,13 +370,13 @@ async function downloadPNG() {
 }
 
 function downloadExcel() {
-  const aoa: any[][] = [];
+  const aoa: string[][] = [];
 
   aoa.push([`makoCalendar - ${year}`]);
-  aoa.push(["Date", ...EVENT_COLS]);
+  aoa.push(["Date", ...allEventCols]);
 
   rows.forEach((r) => {
-    aoa.push([r.dateISO, ...EVENT_COLS.map((c) => r.events[c] || "")]);
+    aoa.push([r.dateISO, ...allEventCols.map((c) => r.events[c] || "")]);
   });
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -456,6 +470,7 @@ function downloadExcel() {
           {view === "events" && (  <div ref={eventsRef} className="h-full">
             <EventsGridView
               rows={rows}
+              eventCols={allEventCols}
               selectedDateISO={selectedDateISO}
               setSelectedDateISO={setSelectedDateISO}
               updateCell={updateCell}
@@ -479,20 +494,6 @@ function downloadExcel() {
               <h2 className="text-xl font-semibold text-slate-800">Add Event</h2>
             </div>
             <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Event Column
-                </label>
-                <select
-                  value={editingEventCol}
-                  onChange={(e) => setEditingEventCol(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  {EVENT_COLS.map((col) => (
-                    <option key={col} value={col}>{col}</option>
-                  ))}
-                </select>
-              </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">
                   Event Title
@@ -544,8 +545,8 @@ function downloadExcel() {
                 <textarea
                   value={pasteText}
                   onChange={(e) => setPasteText(e.target.value)}
-                  placeholder="Paste copied table from Google Sheets (Date + Event 1..Event 10)"
-                  className="w-full min-h-[150px] px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm resize-y"
+                  placeholder="Paste copied table from Google Sheets (Date + Event 1..Event N)"
+                  className="w-full min-h-37.5 px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm resize-y"
                 />
                 <div className="mt-3 flex gap-2">
                   <button
@@ -578,7 +579,7 @@ function downloadExcel() {
 
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-md">
                 <div className="text-xs font-semibold text-slate-700 mb-1">CSV Format Required:</div>
-                <div className="text-xs text-slate-600">Date, Event 1, Event 2, ... Event 10</div>
+                <div className="text-xs text-slate-600">Date, Event 1, Event 2, ... Event N</div>
               </div>
 
               <button
