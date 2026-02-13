@@ -603,12 +603,12 @@ export default function EventsGridView({
 
         {/* Grid Table */}
         <div className="flex-1 overflow-auto">
-          <table className="w-full min-w-[1400px] border-collapse">
+          <table className="w-full min-w-[2000px] border-collapse">
             <thead>
               <tr className="sticky top-0 z-20 bg-teal-700">
                 <th
                   className="
-                    sticky left-0 z-30 min-w-[160px]
+                    sticky left-0 z-30 min-w-[260px]
                     border border-emerald-950/40
                     px-4 py-3 text-left text-sm font-bold text-white
                     bg-teal-700
@@ -621,11 +621,12 @@ export default function EventsGridView({
                   <th
                     key={c}
                     className="
-                      min-w-[160px]
+                      min-w-[260px]
                       border border-emerald-950/40
                       px-4 py-3 text-left text-sm font-bold text-white
                     "
                   >
+                    
                     {c}
                   </th>
                 ))}
