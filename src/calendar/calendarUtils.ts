@@ -18,7 +18,6 @@ export const MONTHS: string[] = [
   "December",
 ];
 
-export const EVENT_COLS: string[] = Array.from({ length: 10 }, (_, i) => `Event ${i + 1}`);
 export const DOW: string[] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 export const DOW_SHORT: string[] = ["S", "M", "T", "W", "T", "F", "S"];
 
@@ -46,10 +45,48 @@ export function buildMonthRows(year: number, monthIndex: number): MonthRow[] {
     rows.push({
       dateISO: isoDate(year, monthIndex, d),
       dateLabel: niceCellDate(year, monthIndex, d),
-      events: Object.fromEntries(EVENT_COLS.map((c) => [c, ""])),
+      events: {},
     });
   }
   return rows;
+}
+
+export function getEventColumnNumber(col: string): number | null {
+  const m = String(col || "").trim().match(/^event\s*(\d+)$/i);
+  if (!m) return null;
+  const num = Number(m[1]);
+  return Number.isFinite(num) && num > 0 ? num : null;
+}
+
+export function toEventColumn(num: number): string {
+  return `Event ${num}`;
+}
+
+export function sortEventColumns(cols: string[]): string[] {
+  return [...new Set(cols)]
+    .filter((c) => getEventColumnNumber(c) !== null)
+    .sort((a, b) => {
+      const an = getEventColumnNumber(a) ?? 0;
+      const bn = getEventColumnNumber(b) ?? 0;
+      return an - bn;
+    })
+    .map((c) => toEventColumn(getEventColumnNumber(c) as number));
+}
+
+export function getEventColumnsFromRow(row: ParsedRow): string[] {
+  return sortEventColumns(Object.keys(row));
+}
+
+export function getEventColumnsFromEventData(events: Record<string, string>): string[] {
+  return sortEventColumns(Object.keys(events));
+}
+
+export function getNextEventColumn(events: Record<string, string>): string {
+  const nums = getEventColumnsFromEventData(events)
+    .map((c) => getEventColumnNumber(c))
+    .filter((n): n is number => n !== null);
+  const max = nums.length ? Math.max(...nums) : 0;
+  return toEventColumn(max + 1);
 }
 
 export function parseCSV(text: string): ParsedRow[] {
@@ -105,15 +142,11 @@ export function normalizeIncomingRow(row: ParsedRow): ParsedRow {
 
   out.Date = row[dateKey] || "";
 
-  EVENT_COLS.forEach((c) => {
-    const target = c.toLowerCase().replace(/\s+/g, "");
-
-    const foundKey = Object.keys(row).find((k) => {
-      const cleaned = k.toLowerCase().replace(/\s+/g, "");
-      return cleaned === target;
-    });
-
-    out[c] = foundKey ? String(row[foundKey] || "").trim() : "";
+  getEventColumnsFromRow(row).forEach((col) => {
+    const foundKey = Object.keys(row).find(
+      (k) => getEventColumnNumber(k) === getEventColumnNumber(col)
+    );
+    out[col] = foundKey ? String(row[foundKey] || "").trim() : "";
   });
 
   return out;
@@ -173,7 +206,7 @@ export function mergeImportedIntoMonth(
     const target = map.get(dateISO);
     if (!target) return;
 
-    EVENT_COLS.forEach((c) => {
+    getEventColumnsFromRow(row).forEach((c) => {
       if (row[c] !== undefined && row[c] !== null && String(row[c]).trim() !== "") {
         target.events[c] = String(row[c]).trim();
       }

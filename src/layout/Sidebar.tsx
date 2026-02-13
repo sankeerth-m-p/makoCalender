@@ -6,7 +6,8 @@ import {
   ChevronUp,
   ChevronDown,
   CalendarDays,
-  List
+  List,
+  X,
 } from "lucide-react";
 import { DOW_SHORT, MONTHS } from "../calendar/calendarUtils";
 import type { CalendarCell } from "../calendar/types";
@@ -25,6 +26,10 @@ interface SidebarProps {
   selectedEvents: string[];
   setYear: (value: number) => void;
   setMonthIndex: (value: number) => void;
+
+  // ⭐ NEW FOR RESPONSIVE
+  isMobileOpen: boolean;
+  setIsMobileOpen: (v: boolean) => void;
 }
 
 export default function Sidebar({
@@ -41,6 +46,8 @@ export default function Sidebar({
   selectedEvents,
   setYear,
   setMonthIndex,
+  isMobileOpen,
+  setIsMobileOpen,
 }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = React.useState(false);
   const [showMiniCalendar, setShowMiniCalendar] = React.useState(true);
@@ -48,59 +55,81 @@ export default function Sidebar({
 
   const isTodaySelected = selectedDateISO === today;
 
-  return (
+  // Close drawer on ESC
+  React.useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setIsMobileOpen(false);
+    }
+    if (isMobileOpen) window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isMobileOpen, setIsMobileOpen]);
+
+  // Sidebar body (same UI)
+  const SidebarBody = (
     <div
-      className="bg-white border-r border-slate-200 py-4 px-2 overflow-y-auto transition-all"
-      style={{ width: isCollapsed ? 64 : 320 }}
+      className="bg-white border-r border-slate-200 overflow-y-auto transition-all h-full"
+      style={{ width: isCollapsed ? 70 : 330 }}
     >
-      {/* Top controls */}
-      <div className="sticky top-0 bg-white pb-4">
-  {isCollapsed ? (
-    /* COLLAPSED: stacked */
-    <div className="space-y-2">
-      <button
-        onClick={() => setIsCollapsed(!isCollapsed)}
-        className="w-full h-10 flex items-center justify-center border border-slate-300 rounded-md text-slate-700 hover:bg-slate-50"
-      >
-        <ChevronRight size={18} />
-      </button>
+      {/* Top Controls */}
+      <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-3 py-3">
+        {/* Mobile close button (ONLY inside drawer) */}
+        <div className="lg:hidden mb-2 flex justify-end">
+          <button
+            onClick={() => setIsMobileOpen(false)}
+            className="h-10 w-10 flex items-center justify-center border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition"
+            title="Close sidebar"
+          >
+            <X size={18} />
+          </button>
+        </div>
 
-      <button
-        onClick={() => setShowImportModal(true)}
-        className="w-full h-10 flex items-center justify-center bg-blue-600 text-white rounded-md hover:bg-blue-700"
-      >
-        <Plus size={18} />
-      </button>
-    </div>
-  ) : (
-    /* EXPANDED: inline */
-    <div className="flex items-center gap-2">
-      <button
-        onClick={() => setIsCollapsed(!isCollapsed)}
-        className="h-10 w-10 flex items-center justify-center border border-slate-300 rounded-md text-slate-700 hover:bg-slate-50"
-      >
-        <ChevronLeft size={18} />
-      </button>
+        {isCollapsed ? (
+          <div className="space-y-2">
+            <button
+              onClick={() => setIsCollapsed(!isCollapsed)}
+              className="w-full h-10 flex items-center justify-center border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition"
+              title="Expand"
+            >
+              <ChevronRight size={18} />
+            </button>
 
-      <button
-        onClick={() => setShowImportModal(true)}
-        className="flex-1 h-11 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium shadow-sm flex items-center justify-center gap-2"
-      >
-        <Plus size={18} />
-        Import Events
-      </button>
-    </div>
-  )}
-</div>
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="w-full h-10 flex items-center justify-center bg-teal-700 text-white rounded-lg hover:bg-teal-800 transition shadow-sm"
+              title="Import Events"
+            >
+              <Plus size={18} />
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsCollapsed(!isCollapsed)}
+              className="h-11 w-11 flex items-center justify-center border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition"
+              title="Collapse"
+            >
+              <ChevronLeft size={18} />
+            </button>
 
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="flex-1 h-11 bg-teal-700 hover:bg-teal-800 text-white rounded-xl font-semibold shadow-sm flex items-center justify-center gap-2 transition"
+            >
+              <Plus size={18} />
+              Import Events
+            </button>
+          </div>
+        )}
+      </div>
 
       {!isCollapsed && (
-        <>
+        <div className="px-3 py-4 space-y-4">
           {/* Mini Calendar */}
-          <section className="mt-6">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-                <CalendarDays size={16} />
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-teal-950/30 bg-teal-700">
+              <div className="flex items-center gap-2 text-sm font-bold text-white">
+                <CalendarDays size={16} className="text-white/90" />
                 {MONTHS[miniMonthIndex]} {miniYear}
               </div>
 
@@ -111,7 +140,8 @@ export default function Sidebar({
                       ? (setMiniMonthIndex(11), setMiniYear(miniYear - 1))
                       : setMiniMonthIndex(miniMonthIndex - 1)
                   }
-                  className="p-1 rounded hover:bg-slate-100 text-slate-600"
+                  className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-white/15 text-white transition"
+                  title="Previous month"
                 >
                   <ChevronLeft size={16} />
                 </button>
@@ -122,37 +152,49 @@ export default function Sidebar({
                       ? (setMiniMonthIndex(0), setMiniYear(miniYear + 1))
                       : setMiniMonthIndex(miniMonthIndex + 1)
                   }
-                  className="p-1 rounded hover:bg-slate-100 text-slate-600"
+                  className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-white/15 text-white transition"
+                  title="Next month"
                 >
                   <ChevronRight size={16} />
                 </button>
 
                 <button
                   onClick={() => setShowMiniCalendar(!showMiniCalendar)}
-                  className="p-1 rounded hover:bg-slate-100 text-slate-600"
+                  className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-white/15 text-white transition"
+                  title={showMiniCalendar ? "Hide calendar" : "Show calendar"}
                 >
-                  {showMiniCalendar ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                  {showMiniCalendar ? (
+                    <ChevronUp size={16} />
+                  ) : (
+                    <ChevronDown size={16} />
+                  )}
                 </button>
               </div>
             </div>
 
             {showMiniCalendar && (
-              <>
-                <div className="grid grid-cols-7 text-center mb-1">
+              <div className="px-4 py-4">
+                {/* DOW */}
+                <div className="grid grid-cols-7 text-center mb-2">
                   {DOW_SHORT.map((d) => (
-                    <div key={d} className="text-[11px] font-medium text-slate-500 py-1">
+                    <div
+                      key={d}
+                      className="text-[11px] font-bold text-slate-500 py-1"
+                    >
                       {d}
                     </div>
                   ))}
                 </div>
 
+                {/* Days */}
                 <div className="grid grid-cols-7 gap-1 text-center">
                   {miniCalendarWeeks.flat().map((cell, idx) => {
                     if (!cell) return <div key={idx} />;
 
                     const isToday = cell.dateISO === today;
                     const isSelected = cell.dateISO === selectedDateISO;
-                    const hasEvents = (eventsByDate.get(cell.dateISO) || []).length > 0;
+                    const hasEvents =
+                      (eventsByDate.get(cell.dateISO) || []).length > 0;
 
                     return (
                       <div
@@ -161,48 +203,63 @@ export default function Sidebar({
                           setYear(miniYear);
                           setMonthIndex(miniMonthIndex);
                           setSelectedDateISO(cell.dateISO);
+
+                          // Close sidebar on mobile after selecting date
+                          setIsMobileOpen(false);
                         }}
-                        className={`aspect-square text-xs flex items-center justify-center rounded-full cursor-pointer transition-colors
+                        className={`relative aspect-square text-xs flex items-center justify-center rounded-xl cursor-pointer transition
                           ${
                             isToday
-                              ? "bg-blue-600 text-white font-semibold"
+                              ? "bg-slate-600 text-white font-bold shadow-sm"
                               : isSelected
-                              ? "bg-blue-100 text-blue-700 font-medium"
-                              : hasEvents
-                              ? "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                              : "text-slate-600 hover:bg-slate-50"
+                              ? "bg-teal-50 text-teal-800 font-bold border border-teal-200"
+                              : "text-slate-700 hover:bg-slate-100"
                           }
                         `}
                       >
                         {cell.day}
+
+                        {/* Event dot */}
+                        {hasEvents && !isToday && !isSelected && (
+                          <span className="absolute bottom-1 h-1 w-1 rounded-full bg-teal-600" />
+                        )}
                       </div>
                     );
                   })}
                 </div>
-              </>
+
+                <div className="mt-3 text-[11px] text-slate-500">
+                  Click a date to jump.
+                </div>
+              </div>
             )}
           </section>
 
           {/* Selected Day Events */}
-          <section className="mt-6 border-t border-slate-200 pt-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-                <List size={16} />
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-slate-50">
+              <div className="flex items-center gap-2 text-sm font-bold text-slate-800">
+                <List size={16} className="text-slate-600" />
                 {isTodaySelected ? "TODAY" : selectedDateISO}
               </div>
 
               <button
                 onClick={() => setShowSelectedEvents(!showSelectedEvents)}
-                className="p-1 rounded hover:bg-slate-100 text-slate-600"
+                className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-slate-200 text-slate-700 transition"
+                title={showSelectedEvents ? "Hide events" : "Show events"}
               >
-                {showSelectedEvents ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                {showSelectedEvents ? (
+                  <ChevronUp size={16} />
+                ) : (
+                  <ChevronDown size={16} />
+                )}
               </button>
             </div>
 
             {showSelectedEvents && (
-              <>
+              <div className="px-4 py-4">
                 {selectedEvents.length === 0 ? (
-                  <div className="rounded-md border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-500">
+                  <div className="rounded-xl border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-500 bg-slate-50">
                     No events scheduled
                   </div>
                 ) : (
@@ -210,18 +267,44 @@ export default function Sidebar({
                     {selectedEvents.map((event, idx) => (
                       <div
                         key={idx}
-                        className="px-3 py-2 rounded-md bg-blue-50 border border-blue-200 text-sm text-slate-700"
+                        className="px-3 py-2 rounded-xl bg-blue-50 border border-blue-200 text-sm text-slate-800"
                       >
                         {event}
                       </div>
                     ))}
                   </div>
                 )}
-              </>
+              </div>
             )}
           </section>
-        </>
+        </div>
       )}
     </div>
+  );
+
+  return (
+    <>
+      {/* Desktop sidebar (unchanged) */}
+      <div className="hidden lg:block h-full">{SidebarBody}</div>
+
+      {/* Mobile drawer */}
+      <div className="lg:hidden">
+        {/* Overlay */}
+        {isMobileOpen && (
+          <div
+            className="fixed inset-0 z-40 bg-black/40"
+            onMouseDown={() => setIsMobileOpen(false)}
+          />
+        )}
+
+        {/* Drawer */}
+        <div
+          className={`fixed top-0 left-0 z-50 h-full transition-transform duration-200 ease-out
+                      ${isMobileOpen ? "translate-x-0" : "-translate-x-full"}`}
+        >
+          {SidebarBody}
+        </div>
+      </div>
+    </>
   );
 }
