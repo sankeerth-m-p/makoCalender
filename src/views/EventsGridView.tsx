@@ -14,6 +14,12 @@ interface EventsGridViewProps {
   updateCell: (dateISO: string, col: string, value: string) => void;
   deleteManyEvents: (items: EventCellRef[]) => Promise<void>;
   clearMonth: () => void;
+  requestConfirm: (
+    message: string,
+    title?: string,
+    confirmLabel?: string
+  ) => Promise<boolean>;
+  notify: (message: string, type?: "success" | "error" | "info") => void;
 }
 
 type EditKey = string; // `${dateISO}__${col}`
@@ -171,6 +177,8 @@ export default function EventsGridView({
   updateCell,
   deleteManyEvents,
   clearMonth,
+  requestConfirm,
+  notify,
 }: EventsGridViewProps) {
   void clearMonth;
 
@@ -180,6 +188,21 @@ export default function EventsGridView({
   // ✅ Selection state for bulk delete
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const selectedCount = selectedKeys.size;
+  
+  const selectableKeys = useMemo(() => {
+    const keys: string[] = [];
+    rows.forEach((r) => {
+      eventCols.forEach((c) => {
+        if (String(r.events[c] || "").trim() !== "") {
+          keys.push(makeKey(r.dateISO, c));
+        }
+      });
+    });
+    return keys;
+  }, [rows, eventCols]);
+  
+  const totalSelectable = selectableKeys.length;
+  const allSelected = totalSelectable > 0 && selectedCount === totalSelectable;
 
   // labels
   const [labels, setLabels] = useState<Label[]>(() => {
@@ -300,9 +323,47 @@ export default function EventsGridView({
     });
   }
 
+  function toggleSelectAll(): void {
+    if (!totalSelectable) return;
+    setSelectedKeys((prev) => {
+      const allAlreadySelected =
+        prev.size === totalSelectable &&
+        selectableKeys.every((k) => prev.has(k));
+      if (allAlreadySelected) return new Set();
+      return new Set(selectableKeys);
+    });
+  }
+
+  async function handleDeleteSingle(dateISO: string, col: string): Promise<void> {
+    const ok = await requestConfirm("Delete this event?", "Delete Event", "Delete");
+    if (!ok) return;
+    
+    try {
+      await deleteManyEvents([{ dateISO, col }]);
+      notify("Event deleted.", "success");
+    } catch {
+      notify("Failed to delete event.", "error");
+      return;
+    }
+
+    const key = makeKey(dateISO, col);
+    setSelectedKeys((prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+  }
+
   async function handleDeleteSelected(): Promise<void> {
     if (!selectedCount) return;
-    if (!confirm(`Delete ${selectedCount} selected event(s)?`)) return;
+    
+    const ok = await requestConfirm(
+      `Delete ${selectedCount} selected event(s)?`,
+      "Delete Selected Events",
+      "Delete"
+    );
+    if (!ok) return;
 
     const items = Array.from(selectedKeys)
       .map(parseKey)
@@ -318,8 +379,13 @@ export default function EventsGridView({
       return;
     }
 
-    await deleteManyEvents(validItems);
-    setSelectedKeys(new Set());
+    try {
+      await deleteManyEvents(validItems);
+      setSelectedKeys(new Set());
+      notify(`${validItems.length} event(s) deleted.`, "success");
+    } catch {
+      notify("Failed to delete selected events.", "error");
+    }
   }
 
   function openEditModal(r: MonthRow, col: string) {
@@ -503,12 +569,28 @@ export default function EventsGridView({
     () => `Delete Selected (${selectedCount})`,
     [selectedCount]
   );
+  
+  const selectAllLabel = useMemo(
+    () =>
+      allSelected
+        ? `Unselect All (${selectedCount})`
+        : "Select All",
+    [allSelected, selectedCount]
+  );
 
   return (
     <>
       <div className="h-full flex flex-col">
         {/* Delete Selected Button */}
-        <div className="z-20 flex h-12 items-center justify-end border-b border-slate-200 bg-white px-4">
+        <div className="z-20 flex h-12 items-center justify-end gap-2 border-b border-slate-200 bg-white px-4">
+          <button
+            type="button"
+            onClick={toggleSelectAll}
+            disabled={totalSelectable === 0}
+            className="h-9 min-w-36 rounded-xl border border-slate-300 bg-white px-3 text-center text-xs font-semibold tabular-nums text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 transition"
+          >
+            {selectAllLabel}
+          </button>
           <button
             type="button"
             onClick={() => void handleDeleteSelected()}
@@ -590,7 +672,7 @@ export default function EventsGridView({
 
                       return (
                         <td key={c} className="border border-slate-200 p-0">
-                          <div className="relative flex items-center gap-2 px-2">
+                          <div className="group relative flex items-center gap-2 px-2">
                             {/* Checkbox for selection */}
                             {hasEvent && (
                               <input
@@ -609,9 +691,10 @@ export default function EventsGridView({
                               readOnly
                               onClick={() => openEditModal(r, c)}
                               className={`
-                                w-full h-full px-2 py-3 pr-12
+                                min-w-0 w-full h-full px-2 py-3
                                 border-0 text-sm cursor-pointer
                                 focus:outline-none
+                                ${dirty ? "pr-12" : "pr-2"}
                                 ${
                                   label
                                     ? colorToClasses(label.color)
@@ -620,10 +703,21 @@ export default function EventsGridView({
                               `}
                             />
 
+                            {hasEvent && (
+                              <button
+                                type="button"
+                                onClick={() => void handleDeleteSingle(r.dateISO, c)}
+                                className="h-6 w-6 shrink-0 rounded-md border border-red-200 bg-red-50 text-[11px] font-bold leading-none text-red-700 opacity-0 transition hover:bg-red-100 group-hover:opacity-100 focus:opacity-100"
+                                title="Delete event"
+                              >
+                                X
+                              </button>
+                            )}
+
                             {dirty && (
                               <div
                                 className="
-                                  absolute right-2 top-1/2 -translate-y-1/2
+                                  absolute right-10 top-1/2 -translate-y-1/2
                                   h-7 w-7 rounded-md
                                   bg-emerald-600 text-white font-bold
                                   flex items-center justify-center
