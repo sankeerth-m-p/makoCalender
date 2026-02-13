@@ -8,11 +8,13 @@ import {
   MAX_YEAR,
   mergeImportedIntoMonth,
   MIN_YEAR,
+  normalizeIncomingRow,
+  parseAnyDateToISO,
   parseCSV,
   parseTSV,
   sortEventColumns,
 } from "../calendar/calendarUtils";
-import type { MonthRow, Session, ViewType } from "../calendar/types";
+import type { MonthRow, ParsedRow, Session, ViewType } from "../calendar/types";
 import DateBar from "../layout/DateBar";
 import Sidebar from "../layout/Sidebar";
 import TopBar from "../layout/TopBar";
@@ -33,6 +35,142 @@ type EventCellRef = {
   dateISO: string;
   col: string;
 };
+
+type ToastType = "success" | "error" | "info";
+
+type ToastItem = {
+  id: number;
+  type: ToastType;
+  message: string;
+};
+
+type ConfirmDialogState = {
+  isOpen: boolean;
+  title: string;
+  message: string;
+  confirmLabel: string;
+};
+
+// -----------------------------
+// LABEL SYSTEM
+// -----------------------------
+type LabelColor =
+  | "red"
+  | "blue"
+  | "purple"
+  | "green"
+  | "orange"
+  | "yellow"
+  | "pink"
+  | "gray";
+
+type Label = {
+  id: string;
+  name: string;
+  color: LabelColor;
+  isDefault?: boolean;
+};
+
+const LS_LABELS_KEY = "makoCalendar_labels_v1";
+
+const TAG_PREFIX = "__TAG:";
+const TAG_SUFFIX = "__";
+
+function normalizeLabelId(raw: string) {
+  return raw
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^A-Z0-9_]/g, "")
+    .slice(0, 16);
+}
+
+function buildTaggedValue(labelId: string | null, text: string) {
+  const clean = text.trim();
+  if (!clean) return "";
+  if (!labelId) return clean;
+
+  return `${TAG_PREFIX}${labelId}${TAG_SUFFIX} ${clean}`;
+}
+
+// Supports ALL formats (new + old)
+function parseTaggedValue(raw: string): { labelId: string | null; text: string } {
+  const v = (raw || "").trim();
+  if (!v) return { labelId: null, text: "" };
+
+  // NEW FORMAT: __TAG:IMP__ Something
+  const m1 = v.match(/^__TAG:([A-Z0-9_]+)__\s*(.*)$/);
+  if (m1) return { labelId: m1[1] || null, text: (m1[2] || "").trim() };
+
+  // OLD FORMAT: __IMP__ Something
+  const m2 = v.match(/^__([A-Z0-9_]+)__\s*(.*)$/);
+  if (m2) return { labelId: m2[1] || null, text: (m2[2] || "").trim() };
+
+  // VERY OLD FORMAT: [IMP] Something
+  const m3 = v.match(/^\[([A-Z0-9_]+)\]\s*(.*)$/);
+  if (m3) return { labelId: m3[1] || null, text: (m3[2] || "").trim() };
+
+  return { labelId: null, text: v };
+}
+
+function colorToButtonClasses(color: LabelColor, active: boolean) {
+  const base = "px-5 py-2 rounded-2xl font-extrabold text-sm transition border";
+
+  if (color === "red")
+    return `${base} ${
+      active
+        ? "bg-rose-600 text-white border-rose-600"
+        : "bg-rose-100 text-rose-800 border-rose-200 hover:bg-rose-200"
+    }`;
+
+  if (color === "blue")
+    return `${base} ${
+      active
+        ? "bg-sky-600 text-white border-sky-600"
+        : "bg-sky-100 text-sky-800 border-sky-200 hover:bg-sky-200"
+    }`;
+
+  if (color === "purple")
+    return `${base} ${
+      active
+        ? "bg-violet-600 text-white border-violet-600"
+        : "bg-violet-100 text-violet-800 border-violet-200 hover:bg-violet-200"
+    }`;
+
+  if (color === "green")
+    return `${base} ${
+      active
+        ? "bg-emerald-600 text-white border-emerald-600"
+        : "bg-emerald-100 text-emerald-800 border-emerald-200 hover:bg-emerald-200"
+    }`;
+
+  if (color === "orange")
+    return `${base} ${
+      active
+        ? "bg-orange-600 text-white border-orange-600"
+        : "bg-orange-100 text-orange-800 border-orange-200 hover:bg-orange-200"
+    }`;
+
+  if (color === "yellow")
+    return `${base} ${
+      active
+        ? "bg-yellow-500 text-white border-yellow-500"
+        : "bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-200"
+    }`;
+
+  if (color === "pink")
+    return `${base} ${
+      active
+        ? "bg-pink-600 text-white border-pink-600"
+        : "bg-pink-100 text-pink-800 border-pink-200 hover:bg-pink-200"
+    }`;
+
+  return `${base} ${
+    active
+      ? "bg-slate-800 text-white border-slate-800"
+      : "bg-slate-100 text-slate-800 border-slate-200 hover:bg-slate-200"
+  }`;
+}
 
 export default function Dashboard({ session, onLogout }: DashboardProps) {
   const now = new Date();
@@ -63,7 +201,6 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
   const [editingEventIndex, setEditingEventIndex] = useState<number | null>(
     null
   );
-  const [editingEventValue, setEditingEventValue] = useState<string>("");
 
   const [rows, setRows] = useState<MonthRow[]>(buildMonthRows(year, monthIndex));
 
@@ -76,6 +213,110 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
 
   const [miniMonthIndex, setMiniMonthIndex] = useState<number>(now.getMonth());
   const [miniYear, setMiniYear] = useState<number>(safeYear);
+
+  // Toast & Confirm
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState>({
+    isOpen: false,
+    title: "Confirm",
+    message: "",
+    confirmLabel: "Confirm",
+  });
+  const confirmResolverRef = useRef<((value: boolean) => void) | null>(null);
+  const toastIdRef = useRef(0);
+
+  // ----------------------------
+  // LABELS
+  // ----------------------------
+  const [labels, setLabels] = useState<Label[]>(() => {
+    const defaults: Label[] = [
+      { id: "IMP", name: "IMP", color: "red", isDefault: true },
+      { id: "MEET", name: "MEET", color: "blue", isDefault: true },
+      { id: "TASK", name: "TASK", color: "purple", isDefault: true },
+    ];
+
+    try {
+      const saved = localStorage.getItem(LS_LABELS_KEY);
+      if (!saved) return defaults;
+
+      const parsed = JSON.parse(saved) as Label[];
+
+      const map = new Map<string, Label>();
+      defaults.forEach((l) => map.set(l.id, l));
+
+      parsed.forEach((l) => {
+        if (!l?.id) return;
+        const id = normalizeLabelId(l.id);
+        if (!id) return;
+
+        if (id === "IMP" || id === "MEET" || id === "TASK") return;
+
+        map.set(id, {
+          id,
+          name: (l.name || id).toString().slice(0, 16),
+          color: (l.color || "green") as LabelColor,
+          isDefault: false,
+        });
+      });
+
+      return Array.from(map.values());
+    } catch {
+      return defaults;
+    }
+  });
+
+  useEffect(() => {
+    const custom = labels.filter((l) => !l.isDefault);
+    localStorage.setItem(LS_LABELS_KEY, JSON.stringify(custom));
+  }, [labels]);
+
+  // ----------------------------
+  // MODAL STATES (CONTROLLED)
+  // ----------------------------
+  const [modalText, setModalText] = useState("");
+  const [modalLabelId, setModalLabelId] = useState<string | null>(null);
+
+  const [showAddLabel, setShowAddLabel] = useState(false);
+  const [newLabelName, setNewLabelName] = useState("");
+  const [newLabelColor, setNewLabelColor] = useState<LabelColor>("green");
+
+  const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
+  const [editLabelName, setEditLabelName] = useState("");
+  const [editLabelColor, setEditLabelColor] = useState<LabelColor>("green");
+
+  const [isCleaningDeletedLabel, setIsCleaningDeletedLabel] = useState(false);
+
+  function pushToast(message: string, type: ToastType = "info"): void {
+    const id = ++toastIdRef.current;
+    setToasts((prev) => [...prev, { id, type, message }]);
+    window.setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 2800);
+  }
+
+  function askConfirm(
+    message: string,
+    title = "Confirm Action",
+    confirmLabel = "Delete"
+  ): Promise<boolean> {
+    setConfirmDialog({
+      isOpen: true,
+      title,
+      message,
+      confirmLabel,
+    });
+    return new Promise((resolve) => {
+      confirmResolverRef.current = resolve;
+    });
+  }
+
+  function closeConfirmWith(result: boolean): void {
+    setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+    if (confirmResolverRef.current) {
+      confirmResolverRef.current(result);
+      confirmResolverRef.current = null;
+    }
+  }
 
   // Close download menu outside click
   useEffect(() => {
@@ -153,12 +394,17 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
   }, [rows]);
 
   const allEventCols = useMemo(() => {
-    const cols: string[] = [];
+    const cols = new Set<string>();
     rows.forEach((r) => {
-      cols.push(...Object.keys(r.events));
+      Object.keys(r.events).forEach((c) => cols.add(c));
     });
-    const sorted = sortEventColumns(cols);
-    return sorted.length ? sorted : ["Event 1"];
+
+    // Keep a stable baseline of Event 1..Event 10.
+    for (let i = 1; i <= 10; i++) {
+      cols.add(`Event ${i}`);
+    }
+
+    return sortEventColumns(Array.from(cols));
   }, [rows]);
 
   const calendarWeeks = useMemo(
@@ -216,43 +462,70 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
   }
 
   async function clearMonth(): Promise<void> {
-    if (!confirm("Clear ALL events for this month?")) return;
-
-    await fetch(
-      `https://backend-m7hv.onrender.com/events/month?year=${year}&month=${
-        monthIndex + 1
-      }`,
-      {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${session.token}`,
-        },
-      }
+    const ok = await askConfirm(
+      "Clear ALL events for this month?",
+      "Clear Month Data",
+      "Clear"
     );
+    if (!ok) return;
 
-    setRows(buildMonthRows(year, monthIndex));
+    try {
+      const res = await fetch(
+        `https://backend-m7hv.onrender.com/events/month?year=${year}&month=${
+          monthIndex + 1
+        }`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${session.token}`,
+          },
+        }
+      );
+      if (!res.ok) throw new Error("Failed to clear month.");
+      setRows(buildMonthRows(year, monthIndex));
+      pushToast("Month data cleared.", "success");
+    } catch {
+      pushToast("Failed to clear month data.", "error");
+    }
   }
 
-  async function bulkUpload(rowsToUpload: MonthRow[]) {
-    const payload = {
-      year,
-      month: monthIndex + 1,
-      rows: rowsToUpload.map((r) => ({
-        dateISO: r.dateISO,
-        events: Object.fromEntries(
-          Object.entries(r.events).filter(([, v]) => v && v.trim() !== "")
-        ),
-      })),
-    };
+  async function uploadImportedRows(importedRows: ParsedRow[]): Promise<number> {
+    const updates = new Map<string, { dateISO: string; eventCol: number; value: string }>();
 
-    await fetch("https://backend-m7hv.onrender.com/events/bulk", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${session.token}`,
-      },
-      body: JSON.stringify(payload),
+    importedRows.forEach((raw) => {
+      const row = normalizeIncomingRow(raw);
+      const dateISO = parseAnyDateToISO(row.Date, year, monthIndex);
+      if (!dateISO) return;
+
+      Object.entries(row).forEach(([key, rawValue]) => {
+        if (String(key).trim().toLowerCase() === "date") return;
+        const eventCol = getEventColumnNumber(key);
+        const value = String(rawValue || "").trim();
+        if (!eventCol || !value) return;
+        updates.set(`${dateISO}__${eventCol}`, { dateISO, eventCol, value });
+      });
     });
+
+    if (!updates.size) return 0;
+
+    const responses = await Promise.all(
+      Array.from(updates.values()).map((item) =>
+        fetch("https://backend-m7hv.onrender.com/events/cell", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.token}`,
+          },
+          body: JSON.stringify(item),
+        })
+      )
+    );
+
+    if (responses.some((res) => !res.ok)) {
+      throw new Error("Some events failed to upload.");
+    }
+
+    return updates.size;
   }
 
   async function applyPaste(): Promise<void> {
@@ -263,7 +536,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     const incoming = tsv.length >= 1 ? tsv : csv;
 
     if (!incoming.length) {
-      alert("No data detected.");
+      pushToast("No data detected.", "error");
       return;
     }
 
@@ -272,10 +545,13 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     setRows(merged);
     setPasteText("");
 
-    await bulkUpload(merged);
-
-    alert("Imported & saved successfully!");
-    setShowImportModal(false);
+    try {
+      await uploadImportedRows(incoming);
+      pushToast("Imported and saved successfully.", "success");
+      setShowImportModal(false);
+    } catch {
+      pushToast("Import failed. Please try again.", "error");
+    }
   }
 
   async function onUploadFile(
@@ -288,18 +564,33 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     const incoming = parseCSV(text);
 
     if (!incoming.length) {
-      alert("Invalid CSV file.");
+      pushToast("Invalid CSV file.", "error");
+      return;
+    }
+
+    const ok = await askConfirm(
+      `Import ${incoming.length} row(s) from "${file.name}"?`,
+      "Confirm CSV Import",
+      "Import"
+    );
+    if (!ok) {
+      if (fileRef.current) fileRef.current.value = "";
+      pushToast("CSV import canceled.", "info");
       return;
     }
 
     const merged = mergeImportedIntoMonth(rows, incoming, year, monthIndex);
 
     setRows(merged);
-    await bulkUpload(merged);
-    alert("CSV imported & saved!");
+    try {
+      await uploadImportedRows(incoming);
+      pushToast("CSV imported and saved.", "success");
+      setShowImportModal(false);
+    } catch {
+      pushToast("CSV import failed. Please try again.", "error");
+    }
 
     if (fileRef.current) fileRef.current.value = "";
-    setShowImportModal(false);
   }
 
   function goToToday() {
@@ -330,18 +621,119 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     }
   }
 
+  function getLabelById(id: string | null) {
+    if (!id) return null;
+    return labels.find((l) => l.id === id) || null;
+  }
+
+  function cancelEditLabel() {
+    setEditingLabelId(null);
+    setEditLabelName("");
+    setEditLabelColor("green");
+  }
+
+  function addNewLabel() {
+    const id = normalizeLabelId(newLabelName);
+    if (!id) return;
+
+    if (labels.some((l) => l.id === id)) {
+      setModalLabelId(id);
+      setShowAddLabel(false);
+      setNewLabelName("");
+      return;
+    }
+
+    if (id === "IMP" || id === "MEET" || id === "TASK") return;
+
+    const newLabel: Label = {
+      id,
+      name: id,
+      color: newLabelColor,
+      isDefault: false,
+    };
+
+    setLabels((prev) => [...prev, newLabel]);
+    setModalLabelId(id);
+
+    setShowAddLabel(false);
+    setNewLabelName("");
+    setNewLabelColor("green");
+  }
+
+  function startEditLabel(label: Label) {
+    if (label.isDefault) return;
+
+    setEditingLabelId(label.id);
+    setEditLabelName(label.name);
+    setEditLabelColor(label.color);
+
+    setShowAddLabel(false);
+  }
+
+  function saveEditLabel() {
+    if (!editingLabelId) return;
+
+    const newName = editLabelName.trim().slice(0, 16);
+    if (!newName) return;
+
+    setLabels((prev) =>
+      prev.map((l) => {
+        if (l.id !== editingLabelId) return l;
+        return { ...l, name: newName, color: editLabelColor };
+      })
+    );
+
+    cancelEditLabel();
+  }
+
+  async function cleanupEventsForDeletedLabel(labelId: string) {
+    setIsCleaningDeletedLabel(true);
+
+    try {
+      for (const r of rows) {
+        for (const col of allEventCols) {
+          const raw = r.events[col] || "";
+          if (!raw) continue;
+
+          const parsed = parseTaggedValue(raw);
+          if (parsed.labelId === labelId) {
+            await updateCell(r.dateISO, col, parsed.text);
+          }
+        }
+      }
+    } finally {
+      setIsCleaningDeletedLabel(false);
+    }
+  }
+
+  async function deleteLabel(labelId: string) {
+    const label = getLabelById(labelId);
+    if (!label) return;
+    if (label.isDefault) return;
+
+    setLabels((prev) => prev.filter((l) => l.id !== labelId));
+
+    if (modalLabelId === labelId) setModalLabelId(null);
+    if (editingLabelId === labelId) cancelEditLabel();
+
+    await cleanupEventsForDeletedLabel(labelId);
+  }
+
   // ⭐ OPEN MODAL: ADD
   function openAddEventModal(dateISO: string) {
+    setModalText("");
+    setModalLabelId(null);
+
     setModalMode("add");
     setEditingDate(dateISO);
     setEditingEventIndex(null);
-    setEditingEventValue("");
-    setShowEventModal(true);
 
-    setTimeout(() => {
-      const el = document.getElementById("eventInput") as HTMLInputElement | null;
-      if (el) el.focus();
-    }, 0);
+    setShowAddLabel(false);
+    setNewLabelName("");
+    setNewLabelColor("green");
+
+    cancelEditLabel();
+    setShowEventModal(true);
   }
 
   // ⭐ OPEN MODAL: EDIT
@@ -350,55 +742,79 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     eventIndex: number,
     currentValue: string
   ) {
+    // ✅ RESET FIRST (prevents 1-frame showing raw)
+    setModalText("");
+    setModalLabelId(null);
+
     setModalMode("edit");
     setEditingDate(dateISO);
     setEditingEventIndex(eventIndex);
-    setEditingEventValue(currentValue || "");
-    setShowEventModal(true);
 
-    setTimeout(() => {
-      const el = document.getElementById("eventInput") as HTMLInputElement | null;
-      if (el) {
-        el.focus();
-        el.select();
-      }
-    }, 0);
+    // parse raw value
+    const parsed = parseTaggedValue(currentValue || "");
+    setModalText(parsed.text);
+    setModalLabelId(parsed.labelId);
+
+    setShowAddLabel(false);
+    setNewLabelName("");
+    setNewLabelColor("green");
+
+    cancelEditLabel();
+    setShowEventModal(true);
   }
 
-  // ⭐ SAVE (ADD OR EDIT)
+  // ⭐ SAVE (ADD OR EDIT) - optimistic close
   function saveEventFromModal() {
-    const value =
-      (document.getElementById("eventInput") as HTMLInputElement)?.value || "";
+    const finalRaw = buildTaggedValue(modalLabelId, modalText);
 
-    if (!value.trim()) {
+    if (!finalRaw.trim()) {
       setShowEventModal(false);
       return;
     }
+
+    // close instantly
+    setShowEventModal(false);
 
     if (modalMode === "add") {
       const targetRow = rows.find((r) => r.dateISO === editingDate);
       const nextCol = getNextEventColumn(targetRow?.events ?? {});
-      updateCell(editingDate, nextCol, value);
-      setShowEventModal(false);
+      updateCell(editingDate, nextCol, finalRaw);
       return;
     }
 
     if (modalMode === "edit") {
-      if (editingEventIndex === null) {
-        setShowEventModal(false);
-        return;
-      }
-
+      if (editingEventIndex === null) return;
       const col = getColumnForEventIndex(editingDate, editingEventIndex);
-      updateCell(editingDate, col, value);
+      updateCell(editingDate, col, finalRaw);
+      return;
+    }
+  }
+
+  async function deleteEventFromModal() {
+    if (modalMode !== "edit") {
       setShowEventModal(false);
       return;
     }
 
-    setShowEventModal(false);
+    if (editingEventIndex === null) {
+      setShowEventModal(false);
+      return;
+    }
+
+    const ok = await askConfirm("Delete this event?", "Delete Event", "Delete");
+    if (!ok) return;
+    
+    const col = getColumnForEventIndex(editingDate, editingEventIndex);
+    try {
+      await updateCell(editingDate, col, "");
+      setShowEventModal(false);
+      pushToast("Event deleted.", "success");
+    } catch {
+      pushToast("Failed to delete event.", "error");
+    }
   }
 
-  // ⭐ NEW: Delete multiple events
+  // ⭐ DELETE MANY EVENTS (from old code)
   async function deleteManyEvents(items: EventCellRef[]): Promise<void> {
     const normalized = items
       .map((item) => {
@@ -612,6 +1028,8 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
                     updateCell={updateCell}
                     deleteManyEvents={deleteManyEvents}
                     clearMonth={clearMonth}
+                    requestConfirm={askConfirm}
+                    notify={pushToast}
                   />
                 </div>
               )}
@@ -620,53 +1038,342 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
         </div>
       </div>
 
-      {/* Event Modal */}
+      {/* Event Modal (NEW LABEL UI) */}
       {showEventModal && (
         <div
           className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 px-4"
           onClick={() => setShowEventModal(false)}
         >
           <div
-            className="bg-white rounded-2xl w-full max-w-md shadow-2xl border border-slate-200"
+            className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl border border-slate-200 overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="px-6 py-4 border-b border-slate-200">
-              <h2 className="text-lg font-bold text-slate-900">
+            {/* Header */}
+            <div className="px-8 py-6 border-b border-slate-200">
+              <h2 className="text-3xl font-extrabold text-slate-900">
                 {modalMode === "add" ? "Add Event" : "Edit Event"}
               </h2>
             </div>
 
-            <div className="p-6 space-y-4">
+            {/* Body */}
+            <div className="px-8 py-6 space-y-5">
+              {/* Event Title */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
+                <label className="block text-sm font-bold text-slate-800 mb-2">
                   Event Title
                 </label>
+
                 <input
-                  id="eventInput"
-                  type="text"
-                  placeholder="Add title"
-                  defaultValue={modalMode === "edit" ? editingEventValue : ""}
-                  className="w-full h-11 px-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  autoFocus
+                  value={modalText}
+                  onChange={(e) => setModalText(e.target.value)}
+                  placeholder="Enter event title"
+                  className="
+                    w-full rounded-xl border-2 px-4 py-3 text-lg
+                    outline-none transition
+                    border-blue-500 focus:ring-2 focus:ring-blue-400
+                    bg-white text-slate-900
+                  "
                 />
               </div>
 
-              {modalMode === "edit" && (
-                <div className="text-xs text-slate-500">
-                  Tip: Click Save to update this event.
+              {/* Labels */}
+              <div className="flex flex-wrap gap-3 items-center">
+                {labels.map((l) => {
+                  const active = modalLabelId === l.id;
+
+                  return (
+                    <div key={l.id} className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setModalLabelId(l.id);
+                          if (l.isDefault) cancelEditLabel();
+                        }}
+                        className={colorToButtonClasses(l.color, active)}
+                      >
+                        {l.name}
+                      </button>
+
+                      {/* Only for custom + selected */}
+                      {!l.isDefault && active && (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => startEditLabel(l)}
+                            className="
+                              h-10 w-10 rounded-2xl border border-slate-200
+                              bg-white text-slate-700 hover:bg-slate-50
+                              font-bold
+                            "
+                            title="Edit label"
+                          >
+                            ✎
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={isCleaningDeletedLabel}
+                            onClick={() => deleteLabel(l.id)}
+                            className={`
+                              h-10 w-10 rounded-2xl border border-slate-200
+                              bg-white font-bold
+                              ${
+                                isCleaningDeletedLabel
+                                  ? "text-slate-400 cursor-not-allowed"
+                                  : "text-rose-700 hover:bg-rose-50"
+                              }
+                            `}
+                            title="Delete label"
+                          >
+                            🗑
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Clear */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalLabelId(null);
+                    cancelEditLabel();
+                  }}
+                  className={`
+                    px-5 py-2 rounded-2xl font-extrabold text-sm transition border
+                    ${
+                      modalLabelId === null
+                        ? "bg-slate-800 text-white border-slate-800"
+                        : "bg-slate-100 text-slate-800 border-slate-200 hover:bg-slate-200"
+                    }
+                  `}
+                >
+                  CLEAR
+                </button>
+
+                {/* Add */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddLabel((s) => !s);
+                    cancelEditLabel();
+                  }}
+                  className="
+                    px-5 py-2 rounded-2xl font-extrabold text-sm transition
+                    bg-emerald-700 text-white hover:bg-emerald-800
+                  "
+                >
+                  + Add Label
+                </button>
+              </div>
+
+              {isCleaningDeletedLabel && (
+                <div className="text-sm font-semibold text-slate-600">
+                  Cleaning events for deleted label... please wait...
+                </div>
+              )}
+
+              {/* Add Label Panel */}
+              {showAddLabel && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">
+                        Label Name
+                      </label>
+                      <input
+                        value={newLabelName}
+                        onChange={(e) => setNewLabelName(e.target.value)}
+                        placeholder="EXAM / TRAVEL / BIRTHDAY"
+                        className="
+                          w-full rounded-xl border border-slate-300
+                          px-3 py-2 text-sm
+                          focus:outline-none focus:ring-2 focus:ring-emerald-500/60
+                        "
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">
+                        Color
+                      </label>
+                      <select
+                        value={newLabelColor}
+                        onChange={(e) =>
+                          setNewLabelColor(e.target.value as LabelColor)
+                        }
+                        className="
+                          w-full rounded-xl border border-slate-300
+                          px-3 py-2 text-sm bg-white
+                          focus:outline-none focus:ring-2 focus:ring-emerald-500/60
+                        "
+                      >
+                        <option value="red">Red</option>
+                        <option value="blue">Blue</option>
+                        <option value="purple">Purple</option>
+                        <option value="green">Green</option>
+                        <option value="orange">Orange</option>
+                        <option value="yellow">Yellow</option>
+                        <option value="pink">Pink</option>
+                        <option value="gray">Gray</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAddLabel(false);
+                        setNewLabelName("");
+                        setNewLabelColor("green");
+                      }}
+                      className="
+                        px-4 py-2 rounded-xl font-bold text-sm
+                        bg-white border border-slate-300
+                        text-slate-700 hover:bg-slate-100
+                      "
+                    >
+                      Cancel
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={addNewLabel}
+                      className="
+                        px-4 py-2 rounded-xl font-bold text-sm
+                        bg-emerald-700 text-white hover:bg-emerald-800
+                      "
+                    >
+                      Create Label
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Edit Label Panel */}
+              {editingLabelId && (
+                <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="font-extrabold text-slate-900">
+                      Edit Label:{" "}
+                      <span className="text-emerald-700">{editingLabelId}</span>
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={cancelEditLabel}
+                      className="
+                        px-3 py-1 rounded-lg
+                        bg-slate-100 hover:bg-slate-200
+                        text-slate-700 font-bold
+                      "
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">
+                        Label Display Name
+                      </label>
+                      <input
+                        value={editLabelName}
+                        onChange={(e) => setEditLabelName(e.target.value)}
+                        className="
+                          w-full rounded-xl border border-slate-300
+                          px-3 py-2 text-sm
+                          focus:outline-none focus:ring-2 focus:ring-emerald-500/60
+                        "
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">
+                        Color
+                      </label>
+                      <select
+                        value={editLabelColor}
+                        onChange={(e) =>
+                          setEditLabelColor(e.target.value as LabelColor)
+                        }
+                        className="
+                          w-full rounded-xl border border-slate-300
+                          px-3 py-2 text-sm bg-white
+                          focus:outline-none focus:ring-2 focus:ring-emerald-500/60
+                        "
+                      >
+                        <option value="red">Red</option>
+                        <option value="blue">Blue</option>
+                        <option value="purple">Purple</option>
+                        <option value="green">Green</option>
+                        <option value="orange">Orange</option>
+                        <option value="yellow">Yellow</option>
+                        <option value="pink">Pink</option>
+                        <option value="gray">Gray</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={cancelEditLabel}
+                      className="
+                        px-4 py-2 rounded-xl font-bold text-sm
+                        bg-white border border-slate-300
+                        text-slate-700 hover:bg-slate-100
+                      "
+                    >
+                      Cancel
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={saveEditLabel}
+                      className="
+                        px-4 py-2 rounded-xl font-bold text-sm
+                        bg-emerald-700 text-white hover:bg-emerald-800
+                      "
+                    >
+                      Save Changes
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
 
-            <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-2">
+            {/* Footer */}
+            <div className="px-8 py-6 border-t border-slate-200 flex justify-end gap-4">
+              {modalMode === "edit" && (
+                <button
+                  onClick={() => void deleteEventFromModal()}
+                  className="mr-auto px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold transition"
+                >
+                  Delete
+                </button>
+              )}
               <button
                 onClick={() => setShowEventModal(false)}
-                className="px-4 h-10 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 transition"
+                className="
+                  rounded-xl border border-slate-300
+                  px-6 py-3 text-lg font-medium
+                  text-slate-700 hover:bg-slate-50 transition
+                "
               >
                 Cancel
               </button>
+
               <button
                 onClick={saveEventFromModal}
-                className="px-4 h-10 bg-teal-700 hover:bg-slate-700 text-white rounded-xl font-semibold transition"
+                className="
+                  rounded-xl bg-emerald-700
+                  px-7 py-3 text-lg font-bold
+                  text-white hover:bg-emerald-800 transition
+                "
               >
                 Save
               </button>
@@ -699,7 +1406,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
                   value={pasteText}
                   onChange={(e) => setPasteText(e.target.value)}
                   placeholder="Paste copied table from Google Sheets (Date + Event 1..Event 10)"
-                  className="w-full min-h-[160px] px-3 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm resize-y"
+                  className="w-full min-h-40 px-3 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm resize-y"
                 />
 
                 <div className="mt-3 flex gap-2">
@@ -764,6 +1471,56 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
           </div>
         </div>
       )}
+
+      {/* Confirm Dialog */}
+      {confirmDialog.isOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="border-b border-slate-200 px-5 py-4">
+              <h3 className="text-base font-bold text-slate-900">
+                {confirmDialog.title}
+              </h3>
+            </div>
+            <div className="px-5 py-4 text-sm text-slate-700">
+              {confirmDialog.message}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => closeConfirmWith(false)}
+                className="h-10 rounded-xl border border-slate-300 px-4 text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => closeConfirmWith(true)}
+                className="h-10 rounded-xl bg-red-600 px-4 font-semibold text-white transition hover:bg-red-700"
+              >
+                {confirmDialog.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notifications */}
+      <div className="pointer-events-none fixed right-4 top-4 z-[80] flex w-full max-w-xs flex-col gap-2">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`rounded-xl border px-4 py-3 text-sm shadow-lg ${
+              toast.type === "success"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : toast.type === "error"
+                ? "border-rose-200 bg-rose-50 text-rose-800"
+                : "border-slate-200 bg-white text-slate-700"
+            }`}
+          >
+            {toast.message}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
