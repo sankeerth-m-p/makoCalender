@@ -22,6 +22,9 @@ import WeekView from "../views/WeekView";
 import * as XLSX from "xlsx";
 import { toPng } from "html-to-image";
 
+// ✅ TOAST
+import toast from "react-hot-toast";
+
 interface DashboardProps {
   session: Session;
   onLogout: () => void;
@@ -50,6 +53,9 @@ type Label = {
 };
 
 const LS_LABELS_KEY = "makoCalendar_labels_v1";
+
+// ✅ NEW: EVENTS CACHE KEY (for instant refresh)
+const LS_EVENTS_CACHE_KEY = "makoCalendar_events_cache_v1";
 
 const TAG_PREFIX = "__TAG:";
 const TAG_SUFFIX = "__";
@@ -150,6 +156,55 @@ function colorToButtonClasses(color: LabelColor, active: boolean) {
   }`;
 }
 
+// ----------------------------
+// ✅ CACHE HELPERS
+// ----------------------------
+function cacheKey(year: number, monthIndex: number) {
+  return `${year}-${monthIndex + 1}`;
+}
+
+function saveMonthToCache(year: number, monthIndex: number, rows: MonthRow[]) {
+  try {
+    const key = cacheKey(year, monthIndex);
+
+    const existing = localStorage.getItem(LS_EVENTS_CACHE_KEY);
+    const parsed = existing ? JSON.parse(existing) : {};
+
+    parsed[key] = rows.map((r) => ({
+      dateISO: r.dateISO,
+      events: r.events,
+    }));
+
+    localStorage.setItem(LS_EVENTS_CACHE_KEY, JSON.stringify(parsed));
+  } catch (e) {
+    console.error("Cache save failed:", e);
+  }
+}
+
+function loadMonthFromCache(year: number, monthIndex: number): MonthRow[] | null {
+  try {
+    const key = cacheKey(year, monthIndex);
+
+    const existing = localStorage.getItem(LS_EVENTS_CACHE_KEY);
+    if (!existing) return null;
+
+    const parsed = JSON.parse(existing);
+    if (!parsed[key]) return null;
+
+    const cached = parsed[key] as { dateISO: string; events: any }[];
+
+    const base = buildMonthRows(year, monthIndex);
+
+    return base.map((r) => {
+      const found = cached.find((x) => x.dateISO === r.dateISO);
+      return found ? { ...r, events: { ...r.events, ...found.events } } : r;
+    });
+  } catch (e) {
+    console.error("Cache load failed:", e);
+    return null;
+  }
+}
+
 export default function Dashboard({ session, onLogout }: DashboardProps) {
   const now = new Date();
   const safeYear = Math.min(Math.max(now.getFullYear(), MIN_YEAR), MAX_YEAR);
@@ -172,6 +227,9 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
 
   const [showEventModal, setShowEventModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+
+  // ✅ NEW: Clear month confirm modal
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   // ⭐ modal mode + which event is being edited
   const [modalMode, setModalMode] = useState<ModalMode>("add");
@@ -273,18 +331,26 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
   useEffect(() => {
     function handleEsc(e: KeyboardEvent) {
       if (e.key === "Escape") setShowDownloadMenu(false);
+      if (e.key === "Escape") setShowClearConfirm(false);
     }
 
     document.addEventListener("keydown", handleEsc);
     return () => document.removeEventListener("keydown", handleEsc);
-  }, []);
+  }, [showClearConfirm]);
 
+  // ----------------------------
+  // ✅ INSTANT EVENTS ON REFRESH
+  // ----------------------------
   useEffect(() => {
-    setRows(buildMonthRows(year, monthIndex));
-  }, [year, monthIndex]);
+    // 1) show cached month instantly
+    const cachedRows = loadMonthFromCache(year, monthIndex);
+    if (cachedRows) {
+      setRows(cachedRows);
+    } else {
+      setRows(buildMonthRows(year, monthIndex));
+    }
 
-  // Load month events
-  useEffect(() => {
+    // 2) fetch backend silently
     async function loadMonth() {
       try {
         const res = await fetch(
@@ -302,13 +368,18 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
 
         const data = await res.json();
 
-        setRows((prev) =>
-          prev.map((r) =>
+        setRows((prev) => {
+          const updated = prev.map((r) =>
             data[r.dateISO]
               ? { ...r, events: { ...r.events, ...data[r.dateISO] } }
               : r
-          )
-        );
+          );
+
+          // save latest to cache
+          saveMonthToCache(year, monthIndex, updated);
+
+          return updated;
+        });
       } catch (e) {
         console.error(e);
       }
@@ -364,45 +435,73 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     const eventCol = getEventColumnNumber(col);
     if (!eventCol) return;
 
-    // optimistic UI
-    setRows((prev) =>
-      prev.map((r) =>
+    // optimistic UI + cache update
+    setRows((prev) => {
+      const updated = prev.map((r) =>
         r.dateISO === dateISO
           ? { ...r, events: { ...r.events, [col]: value } }
           : r
-      )
-    );
+      );
 
-    await fetch("https://backend-m7hv.onrender.com/events/cell", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${session.token}`,
-      },
-      body: JSON.stringify({
-        dateISO,
-        eventCol,
-        value,
-      }),
+      // update cache instantly
+      saveMonthToCache(year, monthIndex, updated);
+
+      return updated;
     });
-  }
 
-  async function clearMonth(): Promise<void> {
-    if (!confirm("Clear ALL events for this month?")) return;
-
-    await fetch(
-      `https://backend-m7hv.onrender.com/events/month?year=${year}&month=${
-        monthIndex + 1
-      }`,
-      {
-        method: "DELETE",
+    try {
+      const res = await fetch("https://backend-m7hv.onrender.com/events/cell", {
+        method: "POST",
         headers: {
+          "Content-Type": "application/json",
           Authorization: `Bearer ${session.token}`,
         },
-      }
-    );
+        body: JSON.stringify({
+          dateISO,
+          eventCol,
+          value,
+        }),
+      });
 
-    setRows(buildMonthRows(year, monthIndex));
+      if (!res.ok) throw new Error("Failed to save event");
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to save. Check internet.");
+    }
+  }
+
+  // ✅ UI based confirm modal trigger
+  function askClearMonth() {
+    setShowClearConfirm(true);
+  }
+
+  async function confirmClearMonth(): Promise<void> {
+    setShowClearConfirm(false);
+
+    try {
+      await fetch(
+        `https://backend-m7hv.onrender.com/events/month?year=${year}&month=${
+          monthIndex + 1
+        }`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${session.token}`,
+          },
+        }
+      );
+
+      const cleared = buildMonthRows(year, monthIndex);
+      setRows(cleared);
+
+      // clear cache for this month
+      saveMonthToCache(year, monthIndex, cleared);
+
+      toast.success("Month cleared successfully!");
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to clear month.");
+    }
   }
 
   async function bulkUpload(rowsToUpload: MonthRow[]) {
@@ -435,7 +534,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     const incoming = tsv.length >= 1 ? tsv : csv;
 
     if (!incoming.length) {
-      alert("No data detected.");
+      toast.error("No data detected.");
       return;
     }
 
@@ -444,10 +543,17 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     setRows(merged);
     setPasteText("");
 
-    await bulkUpload(merged);
+    // update cache instantly
+    saveMonthToCache(year, monthIndex, merged);
 
-    alert("Imported & saved successfully!");
-    setShowImportModal(false);
+    try {
+      await bulkUpload(merged);
+      toast.success("Imported & saved successfully!");
+      setShowImportModal(false);
+    } catch (e) {
+      console.error(e);
+      toast.error("Import failed.");
+    }
   }
 
   async function onUploadFile(
@@ -460,15 +566,24 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     const incoming = parseCSV(text);
 
     if (!incoming.length) {
-      alert("Invalid CSV file.");
+      toast.error("Invalid CSV file.");
       return;
     }
 
     const merged = mergeImportedIntoMonth(rows, incoming, year, monthIndex);
 
     setRows(merged);
-    await bulkUpload(merged);
-    alert("CSV imported & saved!");
+
+    // update cache instantly
+    saveMonthToCache(year, monthIndex, merged);
+
+    try {
+      await bulkUpload(merged);
+      toast.success("CSV imported & saved!");
+    } catch (e) {
+      console.error(e);
+      toast.error("CSV upload failed.");
+    }
 
     if (fileRef.current) fileRef.current.value = "";
     setShowImportModal(false);
@@ -539,6 +654,8 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     setShowAddLabel(false);
     setNewLabelName("");
     setNewLabelColor("green");
+
+    toast.success(`Label "${id}" created!`);
   }
 
   function startEditLabel(label: Label) {
@@ -564,6 +681,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       })
     );
 
+    toast.success("Label updated!");
     cancelEditLabel();
   }
 
@@ -597,6 +715,8 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     if (modalLabelId === labelId) setModalLabelId(null);
     if (editingLabelId === labelId) cancelEditLabel();
 
+    toast.success(`Label "${labelId}" deleted!`);
+
     await cleanupEventsForDeletedLabel(labelId);
   }
 
@@ -623,7 +743,6 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     eventIndex: number,
     currentValue: string
   ) {
-    // ✅ RESET FIRST (prevents 1-frame showing raw)
     setModalText("");
     setModalLabelId(null);
 
@@ -631,7 +750,6 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     setEditingDate(dateISO);
     setEditingEventIndex(eventIndex);
 
-    // parse raw value
     const parsed = parseTaggedValue(currentValue || "");
     setModalText(parsed.text);
     setModalLabelId(parsed.labelId);
@@ -653,13 +771,13 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       return;
     }
 
-    // close instantly
     setShowEventModal(false);
 
     if (modalMode === "add") {
       const targetRow = rows.find((r) => r.dateISO === editingDate);
       const nextCol = getNextEventColumn(targetRow?.events ?? {});
       updateCell(editingDate, nextCol, finalRaw);
+      toast.success("Event added!");
       return;
     }
 
@@ -667,6 +785,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       if (editingEventIndex === null) return;
       const col = getColumnForEventIndex(editingDate, editingEventIndex);
       updateCell(editingDate, col, finalRaw);
+      toast.success("Event updated!");
       return;
     }
   }
@@ -684,32 +803,39 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
 
     if (!target) return;
 
-    const dataUrl = await toPng(target, {
-      cacheBust: true,
-      pixelRatio: 2,
-      backgroundColor: "#ffffff",
-    });
-
-    const res = await fetch(dataUrl);
-    const blob = await res.blob();
-
-    const file = new File(
-      [blob],
-      `calendar-${view}-${monthIndex + 1}-${year}.png`,
-      { type: "image/png" }
-    );
-
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({
-        title: "makoCalendar",
-        text: `Sharing ${view} view`,
-        files: [file],
+    try {
+      const dataUrl = await toPng(target, {
+        cacheBust: true,
+        pixelRatio: 2,
+        backgroundColor: "#ffffff",
       });
-    } else {
-      const link = document.createElement("a");
-      link.href = dataUrl;
-      link.download = file.name;
-      link.click();
+
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+
+      const file = new File(
+        [blob],
+        `calendar-${view}-${monthIndex + 1}-${year}.png`,
+        { type: "image/png" }
+      );
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: "makoCalendar",
+          text: `Sharing ${view} view`,
+          files: [file],
+        });
+        toast.success("Shared successfully!");
+      } else {
+        const link = document.createElement("a");
+        link.href = dataUrl;
+        link.download = file.name;
+        link.click();
+        toast.success("PNG downloaded!");
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to share.");
     }
   }
 
@@ -723,33 +849,46 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
 
     if (!target) return;
 
-    const dataUrl = await toPng(target, {
-      cacheBust: true,
-      pixelRatio: 2,
-      backgroundColor: "#ffffff",
-    });
+    try {
+      const dataUrl = await toPng(target, {
+        cacheBust: true,
+        pixelRatio: 2,
+        backgroundColor: "#ffffff",
+      });
 
-    const link = document.createElement("a");
-    link.download = `${view}-${monthIndex + 1}-${year}.png`;
-    link.href = dataUrl;
-    link.click();
+      const link = document.createElement("a");
+      link.download = `${view}-${monthIndex + 1}-${year}.png`;
+      link.href = dataUrl;
+      link.click();
+      toast.success("PNG downloaded!");
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to download PNG.");
+    }
   }
 
   function downloadExcel() {
-    const aoa: string[][] = [];
+    try {
+      const aoa: string[][] = [];
 
-    aoa.push([`makoCalendar - ${year}`]);
-    aoa.push(["Date", ...allEventCols]);
+      aoa.push([`makoCalendar - ${year}`]);
+      aoa.push(["Date", ...allEventCols]);
 
-    rows.forEach((r) => {
-      aoa.push([r.dateISO, ...allEventCols.map((c) => r.events[c] || "")]);
-    });
+      rows.forEach((r) => {
+        aoa.push([r.dateISO, ...allEventCols.map((c) => r.events[c] || "")]);
+      });
 
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      const wb = XLSX.utils.book_new();
 
-    XLSX.utils.book_append_sheet(wb, ws, `${monthIndex + 1}-${year}`);
-    XLSX.writeFile(wb, `calendar-${monthIndex + 1}-${year}.xlsx`);
+      XLSX.utils.book_append_sheet(wb, ws, `${monthIndex + 1}-${year}`);
+      XLSX.writeFile(wb, `calendar-${monthIndex + 1}-${year}.xlsx`);
+
+      toast.success("Excel downloaded!");
+    } catch (e) {
+      console.error(e);
+      toast.error("Excel download failed.");
+    }
   }
 
   return (
@@ -845,7 +984,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
                     selectedDateISO={selectedDateISO}
                     setSelectedDateISO={setSelectedDateISO}
                     updateCell={updateCell}
-                    clearMonth={() => {}}
+                    clearMonth={askClearMonth} // ✅ changed
                   />
                 </div>
               )}
@@ -853,6 +992,44 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
           </div>
         </div>
       </div>
+
+      {/* ✅ Clear Month Confirm Modal */}
+      {showClearConfirm && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 px-4"
+          onClick={() => setShowClearConfirm(false)}
+        >
+          <div
+            className="bg-white w-full max-w-md rounded-2xl border border-slate-200 shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-5 border-b border-slate-200">
+              <h2 className="text-xl font-extrabold text-slate-900">
+                Clear Month?
+              </h2>
+              <p className="text-sm text-slate-600 mt-1">
+                This will permanently delete all events for this month.
+              </p>
+            </div>
+
+            <div className="px-6 py-5 flex justify-end gap-3">
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 font-semibold hover:bg-slate-50 transition"
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={confirmClearMonth}
+                className="px-4 py-2 rounded-xl bg-rose-600 text-white font-extrabold hover:bg-rose-700 transition"
+              >
+                Yes, Clear
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Event Modal (NEW LABEL UI) */}
       {showEventModal && (
@@ -1252,7 +1429,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               </div>
 
               <button
-                onClick={clearMonth}
+                onClick={askClearMonth}
                 className="w-full px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl transition font-semibold"
               >
                 Clear Month Data
