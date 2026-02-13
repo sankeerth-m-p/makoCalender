@@ -114,59 +114,51 @@ function colorToButtonClasses(color: LabelColor, active: boolean) {
   const base = "px-4 py-2 rounded-xl font-bold text-sm transition border";
 
   if (color === "red")
-    return `${base} ${
-      active
+    return `${base} ${active
         ? "bg-rose-600 text-white border-rose-600"
         : "bg-rose-100 text-rose-800 border-rose-200 hover:bg-rose-200"
-    }`;
+      }`;
 
   if (color === "blue")
-    return `${base} ${
-      active
+    return `${base} ${active
         ? "bg-sky-600 text-white border-sky-600"
         : "bg-sky-100 text-sky-800 border-sky-200 hover:bg-sky-200"
-    }`;
+      }`;
 
   if (color === "purple")
-    return `${base} ${
-      active
+    return `${base} ${active
         ? "bg-violet-600 text-white border-violet-600"
         : "bg-violet-100 text-violet-800 border-violet-200 hover:bg-violet-200"
-    }`;
+      }`;
 
   if (color === "green")
-    return `${base} ${
-      active
+    return `${base} ${active
         ? "bg-emerald-600 text-white border-emerald-600"
         : "bg-emerald-100 text-emerald-800 border-emerald-200 hover:bg-emerald-200"
-    }`;
+      }`;
 
   if (color === "orange")
-    return `${base} ${
-      active
+    return `${base} ${active
         ? "bg-orange-600 text-white border-orange-600"
         : "bg-orange-100 text-orange-800 border-orange-200 hover:bg-orange-200"
-    }`;
+      }`;
 
   if (color === "yellow")
-    return `${base} ${
-      active
+    return `${base} ${active
         ? "bg-yellow-500 text-white border-yellow-500"
         : "bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-200"
-    }`;
+      }`;
 
   if (color === "pink")
-    return `${base} ${
-      active
+    return `${base} ${active
         ? "bg-pink-600 text-white border-pink-600"
         : "bg-pink-100 text-pink-800 border-pink-200 hover:bg-pink-200"
-    }`;
+      }`;
 
-  return `${base} ${
-    active
+  return `${base} ${active
       ? "bg-slate-700 text-white border-slate-700"
       : "bg-slate-100 text-slate-800 border-slate-200 hover:bg-slate-200"
-  }`;
+    }`;
 }
 
 export default function EventsGridView({
@@ -188,7 +180,7 @@ export default function EventsGridView({
   // ✅ Selection state for bulk delete
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const selectedCount = selectedKeys.size;
-  
+
   const selectableKeys = useMemo(() => {
     const keys: string[] = [];
     rows.forEach((r) => {
@@ -200,7 +192,7 @@ export default function EventsGridView({
     });
     return keys;
   }, [rows, eventCols]);
-  
+
   const totalSelectable = selectableKeys.length;
   const allSelected = totalSelectable > 0 && selectedCount === totalSelectable;
 
@@ -337,7 +329,7 @@ export default function EventsGridView({
   async function handleDeleteSingle(dateISO: string, col: string): Promise<void> {
     const ok = await requestConfirm("Delete this event?", "Delete Event", "Delete");
     if (!ok) return;
-    
+
     try {
       await deleteManyEvents([{ dateISO, col }]);
       notify("Event deleted.", "success");
@@ -357,7 +349,7 @@ export default function EventsGridView({
 
   async function handleDeleteSelected(): Promise<void> {
     if (!selectedCount) return;
-    
+
     const ok = await requestConfirm(
       `Delete ${selectedCount} selected event(s)?`,
       "Delete Selected Events",
@@ -569,7 +561,7 @@ export default function EventsGridView({
     () => `Delete Selected (${selectedCount})`,
     [selectedCount]
   );
-  
+
   const selectAllLabel = useMemo(
     () =>
       allSelected
@@ -608,14 +600,16 @@ export default function EventsGridView({
               <tr className="sticky top-0 z-20 bg-teal-700">
                 <th
                   className="
-                    sticky left-0 z-30 min-w-[260px]
-                    border border-emerald-950/40
-                    px-4 py-3 text-left text-sm font-bold text-white
-                    bg-teal-700
-                  "
+    sticky left-0 z-30
+    min-w-[120px] sm:min-w-[160px] lg:min-w-[220px]
+    border border-emerald-950/40
+    px-2 sm:px-4 py-3 text-left text-sm font-bold text-white
+    bg-teal-700
+  "
                 >
                   Date
                 </th>
+
 
                 {eventCols.map((c) => (
                   <th
@@ -626,7 +620,7 @@ export default function EventsGridView({
                       px-4 py-3 text-left text-sm font-bold text-white
                     "
                   >
-                    
+
                     {c}
                   </th>
                 ))}
@@ -650,10 +644,9 @@ export default function EventsGridView({
                         sticky left-0 z-10
                         border border-slate-200
                         px-4 py-3 text-sm font-semibold cursor-pointer
-                        ${
-                          isSelected
-                            ? "bg-emerald-50 text-emerald-900"
-                            : "bg-white text-slate-800"
+                        ${isSelected
+                          ? "bg-emerald-50 text-emerald-900"
+                          : "bg-white text-slate-800"
                         }
                       `}
                     >
@@ -696,10 +689,9 @@ export default function EventsGridView({
                                 border-0 text-sm cursor-pointer
                                 focus:outline-none
                                 ${dirty ? "pr-12" : "pr-2"}
-                                ${
-                                  label
-                                    ? colorToClasses(label.color)
-                                    : "bg-transparent text-slate-800"
+                                ${label
+                                  ? colorToClasses(label.color)
+                                  : "bg-transparent text-slate-800"
                                 }
                               `}
                             />
@@ -765,10 +757,9 @@ export default function EventsGridView({
                     w-full rounded-xl border-2 px-4 py-3 text-lg
                     outline-none transition
                     border-blue-500 focus:ring-2 focus:ring-blue-400
-                    ${
-                      modalLabel
-                        ? colorToClasses(modalLabel.color)
-                        : "bg-white text-slate-900"
+                    ${modalLabel
+                      ? colorToClasses(modalLabel.color)
+                      : "bg-white text-slate-900"
                     }
                   `}
                 />
@@ -814,10 +805,9 @@ export default function EventsGridView({
                             className={`
                               h-9 w-9 rounded-xl border border-slate-200
                               bg-white font-bold
-                              ${
-                                isCleaningDeletedLabel
-                                  ? "text-slate-400 cursor-not-allowed"
-                                  : "text-rose-700 hover:bg-rose-50"
+                              ${isCleaningDeletedLabel
+                                ? "text-slate-400 cursor-not-allowed"
+                                : "text-rose-700 hover:bg-rose-50"
                               }
                             `}
                             title="Delete label"
@@ -839,10 +829,9 @@ export default function EventsGridView({
                   }}
                   className={`
                     px-4 py-2 rounded-xl font-bold text-sm transition border
-                    ${
-                      modalLabelId === null
-                        ? "bg-slate-700 text-white border-slate-700"
-                        : "bg-slate-100 text-slate-800 border-slate-200 hover:bg-slate-200"
+                    ${modalLabelId === null
+                      ? "bg-slate-700 text-white border-slate-700"
+                      : "bg-slate-100 text-slate-800 border-slate-200 hover:bg-slate-200"
                     }
                   `}
                 >
