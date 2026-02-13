@@ -10,6 +10,45 @@ interface WeekViewProps {
   onEditEvent: (dateISO: string, eventIndex: number, value: string) => void;
 }
 
+// -------------------------
+// TAG HELPERS (HIDE LOGIC)
+// -------------------------
+function parseTaggedValue(raw: string): { labelId: string | null; text: string } {
+  const v = (raw || "").trim();
+  if (!v) return { labelId: null, text: "" };
+
+  const m1 = v.match(/^__TAG:([A-Z0-9_]+)__\s*(.*)$/);
+  if (m1) return { labelId: m1[1] || null, text: (m1[2] || "").trim() };
+
+  const m2 = v.match(/^__([A-Z0-9_]+)__\s*(.*)$/);
+  if (m2) return { labelId: m2[1] || null, text: (m2[2] || "").trim() };
+
+  const m3 = v.match(/^\[([A-Z0-9_]+)\]\s*(.*)$/);
+  if (m3) return { labelId: m3[1] || null, text: (m3[2] || "").trim() };
+
+  return { labelId: null, text: v };
+}
+
+function labelToTheme(labelId: string | null) {
+  if (labelId === "IMP")
+    return "bg-rose-300 border-rose-500 text-rose-950 font-extrabold";
+
+  if (labelId === "MEET")
+    return "bg-sky-300 border-sky-500 text-sky-950 font-extrabold";
+
+  if (labelId === "TASK")
+    return "bg-violet-300 border-violet-500 text-violet-950 font-extrabold";
+
+  if (labelId)
+    return "bg-emerald-300 border-emerald-500 text-emerald-950 font-extrabold";
+
+  // ✅ NORMAL EVENTS → SAME STYLE AS + BUTTON
+  return "bg-sky-50 border-sky-300 text-slate-900 font-normal";
+}
+
+
+
+
 export default function WeekView({
   year,
   monthIndex,
@@ -122,29 +161,25 @@ export default function WeekView({
                     events.length > 10 ? "max-h-56 overflow-y-auto pr-1" : ""
                   }`}
                 >
-                 {events.map((ev, eventIdx) => {
-  const isImportant =
-    ev.trim().startsWith("!") || ev.toUpperCase().startsWith("[IMP]");
+                  {events.map((rawEv, eventIdx) => {
+                    const parsed = parseTaggedValue(rawEv);
+                    const theme = labelToTheme(parsed.labelId);
 
-  return (
-    <div
-      key={eventIdx}
-      onClick={(e) => {
-        e.stopPropagation();
-        onEditEvent(dateISO, eventIdx, ev);
-      }}
-      className={`px-3 py-2 rounded-lg truncate cursor-pointer border ${
-        isImportant
-          ? "bg-rose-50 border-rose-200 text-rose-900 font-semibold"
-          : "bg-blue-50 border-blue-200 text-slate-800"
-      }`}
-      title={isImportant ? "Important event (Click to edit)" : "Click to edit"}
-    >
-      {ev}
-    </div>
-  );
-})}
-
+                    return (
+                      <div
+                        key={eventIdx}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          // IMPORTANT: send RAW to modal
+                          onEditEvent(dateISO, eventIdx, rawEv);
+                        }}
+                     className={`px-3 py-2 rounded-xl truncate cursor-pointer border shadow-sm ${theme}`}
+                        title="Click to edit"
+                      >
+                        {parsed.text || "(No title)"}
+                      </div>
+                    );
+                  })}
 
                   {events.length === 0 && (
                     <div className="text-[11px] text-slate-400 italic">
