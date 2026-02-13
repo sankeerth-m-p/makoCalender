@@ -14,6 +14,12 @@ interface EventsGridViewProps {
   updateCell: (dateISO: string, col: string, value: string) => void;
   deleteManyEvents: (items: EventCellRef[]) => Promise<void>;
   clearMonth: () => void;
+  requestConfirm: (
+    message: string,
+    title?: string,
+    confirmLabel?: string
+  ) => Promise<boolean>;
+  notify: (message: string, type?: "success" | "error" | "info") => void;
 }
 
 type EditKey = string; // `${dateISO}__${col}`
@@ -26,6 +32,8 @@ export default function EventsGridView({
   updateCell,
   deleteManyEvents,
   clearMonth,
+  requestConfirm,
+  notify,
 }: EventsGridViewProps) {
   void clearMonth;
 
@@ -141,8 +149,15 @@ export default function EventsGridView({
   }
 
   async function handleDeleteSingle(dateISO: string, col: string): Promise<void> {
-    if (!confirm("Delete this event?")) return;
-    await deleteManyEvents([{ dateISO, col }]);
+    const ok = await requestConfirm("Delete this event?", "Delete Event", "Delete");
+    if (!ok) return;
+    try {
+      await deleteManyEvents([{ dateISO, col }]);
+      notify("Event deleted.", "success");
+    } catch {
+      notify("Failed to delete event.", "error");
+      return;
+    }
 
     const key = makeKey(dateISO, col);
     setSelectedKeys((prev) => {
@@ -155,7 +170,12 @@ export default function EventsGridView({
 
   async function handleDeleteSelected(): Promise<void> {
     if (!selectedCount) return;
-    if (!confirm(`Delete ${selectedCount} selected event(s)?`)) return;
+    const ok = await requestConfirm(
+      `Delete ${selectedCount} selected event(s)?`,
+      "Delete Selected Events",
+      "Delete"
+    );
+    if (!ok) return;
 
     const items = Array.from(selectedKeys)
       .map(parseKey)
@@ -171,8 +191,13 @@ export default function EventsGridView({
       return;
     }
 
-    await deleteManyEvents(validItems);
-    setSelectedKeys(new Set());
+    try {
+      await deleteManyEvents(validItems);
+      setSelectedKeys(new Set());
+      notify(`${validItems.length} event(s) deleted.`, "success");
+    } catch {
+      notify("Failed to delete selected events.", "error");
+    }
   }
 
   const selectedLabel = useMemo(

@@ -36,6 +36,21 @@ type EventCellRef = {
   col: string;
 };
 
+type ToastType = "success" | "error" | "info";
+
+type ToastItem = {
+  id: number;
+  type: ToastType;
+  message: string;
+};
+
+type ConfirmDialogState = {
+  isOpen: boolean;
+  title: string;
+  message: string;
+  confirmLabel: string;
+};
+
 export default function Dashboard({ session, onLogout }: DashboardProps) {
   const now = new Date();
   const safeYear = Math.min(Math.max(now.getFullYear(), MIN_YEAR), MAX_YEAR);
@@ -78,6 +93,47 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
 
   const [miniMonthIndex, setMiniMonthIndex] = useState<number>(now.getMonth());
   const [miniYear, setMiniYear] = useState<number>(safeYear);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState>({
+    isOpen: false,
+    title: "Confirm",
+    message: "",
+    confirmLabel: "Confirm",
+  });
+  const confirmResolverRef = useRef<((value: boolean) => void) | null>(null);
+  const toastIdRef = useRef(0);
+
+  function pushToast(message: string, type: ToastType = "info"): void {
+    const id = ++toastIdRef.current;
+    setToasts((prev) => [...prev, { id, type, message }]);
+    window.setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 2800);
+  }
+
+  function askConfirm(
+    message: string,
+    title = "Confirm Action",
+    confirmLabel = "Delete"
+  ): Promise<boolean> {
+    setConfirmDialog({
+      isOpen: true,
+      title,
+      message,
+      confirmLabel,
+    });
+    return new Promise((resolve) => {
+      confirmResolverRef.current = resolve;
+    });
+  }
+
+  function closeConfirmWith(result: boolean): void {
+    setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+    if (confirmResolverRef.current) {
+      confirmResolverRef.current(result);
+      confirmResolverRef.current = null;
+    }
+  }
 
   // Close download menu outside click
   useEffect(() => {
@@ -223,21 +279,31 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
   }
 
   async function clearMonth(): Promise<void> {
-    if (!confirm("Clear ALL events for this month?")) return;
-
-    await fetch(
-      `https://backend-m7hv.onrender.com/events/month?year=${year}&month=${
-        monthIndex + 1
-      }`,
-      {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${session.token}`,
-        },
-      }
+    const ok = await askConfirm(
+      "Clear ALL events for this month?",
+      "Clear Month Data",
+      "Clear"
     );
+    if (!ok) return;
 
-    setRows(buildMonthRows(year, monthIndex));
+    try {
+      const res = await fetch(
+        `https://backend-m7hv.onrender.com/events/month?year=${year}&month=${
+          monthIndex + 1
+        }`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${session.token}`,
+          },
+        }
+      );
+      if (!res.ok) throw new Error("Failed to clear month.");
+      setRows(buildMonthRows(year, monthIndex));
+      pushToast("Month data cleared.", "success");
+    } catch {
+      pushToast("Failed to clear month data.", "error");
+    }
   }
 
   async function uploadImportedRows(importedRows: ParsedRow[]): Promise<number> {
@@ -287,7 +353,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     const incoming = tsv.length >= 1 ? tsv : csv;
 
     if (!incoming.length) {
-      alert("No data detected.");
+      pushToast("No data detected.", "error");
       return;
     }
 
@@ -296,10 +362,13 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     setRows(merged);
     setPasteText("");
 
-    await uploadImportedRows(incoming);
-
-    alert("Imported & saved successfully!");
-    setShowImportModal(false);
+    try {
+      await uploadImportedRows(incoming);
+      pushToast("Imported and saved successfully.", "success");
+      setShowImportModal(false);
+    } catch {
+      pushToast("Import failed. Please try again.", "error");
+    }
   }
 
   async function onUploadFile(
@@ -312,18 +381,33 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     const incoming = parseCSV(text);
 
     if (!incoming.length) {
-      alert("Invalid CSV file.");
+      pushToast("Invalid CSV file.", "error");
+      return;
+    }
+
+    const ok = await askConfirm(
+      `Import ${incoming.length} row(s) from "${file.name}"?`,
+      "Confirm CSV Import",
+      "Import"
+    );
+    if (!ok) {
+      if (fileRef.current) fileRef.current.value = "";
+      pushToast("CSV import canceled.", "info");
       return;
     }
 
     const merged = mergeImportedIntoMonth(rows, incoming, year, monthIndex);
 
     setRows(merged);
-    await uploadImportedRows(incoming);
-    alert("CSV imported & saved!");
+    try {
+      await uploadImportedRows(incoming);
+      pushToast("CSV imported and saved.", "success");
+      setShowImportModal(false);
+    } catch {
+      pushToast("CSV import failed. Please try again.", "error");
+    }
 
     if (fileRef.current) fileRef.current.value = "";
-    setShowImportModal(false);
   }
 
   function goToToday() {
@@ -402,7 +486,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     if (modalMode === "add") {
       const targetRow = rows.find((r) => r.dateISO === editingDate);
       const nextCol = getNextEventColumn(targetRow?.events ?? {});
-      updateCell(editingDate, nextCol, value);
+      void updateCell(editingDate, nextCol, value);
       setShowEventModal(false);
       return;
     }
@@ -414,7 +498,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       }
 
       const col = getColumnForEventIndex(editingDate, editingEventIndex);
-      updateCell(editingDate, col, value);
+      void updateCell(editingDate, col, value);
       setShowEventModal(false);
       return;
     }
@@ -422,7 +506,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     setShowEventModal(false);
   }
 
-  function deleteEventFromModal() {
+  async function deleteEventFromModal() {
     if (modalMode !== "edit") {
       setShowEventModal(false);
       return;
@@ -433,10 +517,16 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       return;
     }
 
-    if (!confirm("Delete this event?")) return;
+    const ok = await askConfirm("Delete this event?", "Delete Event", "Delete");
+    if (!ok) return;
     const col = getColumnForEventIndex(editingDate, editingEventIndex);
-    updateCell(editingDate, col, "");
-    setShowEventModal(false);
+    try {
+      await updateCell(editingDate, col, "");
+      setShowEventModal(false);
+      pushToast("Event deleted.", "success");
+    } catch {
+      pushToast("Failed to delete event.", "error");
+    }
   }
 
   // ⭐ NEW: Delete multiple events
@@ -653,6 +743,8 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
                     updateCell={updateCell}
                     deleteManyEvents={deleteManyEvents}
                     clearMonth={clearMonth}
+                    requestConfirm={askConfirm}
+                    notify={pushToast}
                   />
                 </div>
               )}
@@ -701,7 +793,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
             <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-2">
               {modalMode === "edit" && (
                 <button
-                  onClick={deleteEventFromModal}
+                  onClick={() => void deleteEventFromModal()}
                   className="px-4 h-10 bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold transition"
                 >
                   Delete
@@ -813,6 +905,54 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
           </div>
         </div>
       )}
+
+      {confirmDialog.isOpen && (
+        <div className="fixed inset-0 z-70 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="border-b border-slate-200 px-5 py-4">
+              <h3 className="text-base font-bold text-slate-900">
+                {confirmDialog.title}
+              </h3>
+            </div>
+            <div className="px-5 py-4 text-sm text-slate-700">
+              {confirmDialog.message}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => closeConfirmWith(false)}
+                className="h-10 rounded-xl border border-slate-300 px-4 text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => closeConfirmWith(true)}
+                className="h-10 rounded-xl bg-red-600 px-4 font-semibold text-white transition hover:bg-red-700"
+              >
+                {confirmDialog.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="pointer-events-none fixed right-4 top-4 z-80 flex w-full max-w-xs flex-col gap-2">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`rounded-xl border px-4 py-3 text-sm shadow-lg ${
+              toast.type === "success"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : toast.type === "error"
+                ? "border-rose-200 bg-rose-50 text-rose-800"
+                : "border-slate-200 bg-white text-slate-700"
+            }`}
+          >
+            {toast.message}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
