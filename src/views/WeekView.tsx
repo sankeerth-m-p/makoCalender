@@ -47,7 +47,7 @@ export default function WeekView({
   return (
     <div className="w-full h-full overflow-x-auto">
       {/* Keeps UI exact */}
-      <div className="min-w-[1000px] h-full flex flex-col bg-white">
+      <div className="min-w-250 h-full flex flex-col bg-white">
         {/* Week Navigation */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-white sticky top-0 z-30">
           <button
@@ -72,7 +72,7 @@ export default function WeekView({
         {/* ONE GRID for header + row */}
         <div className="grid grid-cols-[70px_repeat(7,1fr)] divide-x divide-slate-200 border-b border-slate-200">
           {/* Left empty block in header */}
-          <div className="bg-teal-700 sticky top-[56px] z-20" />
+          <div className="bg-teal-700 sticky top-14 z-20" />
 
           {/* Header days */}
           {weekDays.map((d, idx) => {
@@ -82,7 +82,7 @@ export default function WeekView({
             return (
               <div
                 key={idx}
-                className="bg-teal-700 sticky top-[56px] z-20 py-3 text-center"
+                className="bg-teal-700 sticky top-14 z-20 py-3 text-center"
               >
                 <div className="text-xs text-white/90 uppercase font-semibold tracking-wide">
                   {DOW[idx]}
@@ -163,3 +163,4 @@ export default function WeekView({
     </div>
   );
 }
+

@@ -35,6 +35,19 @@ export default function EventsGridView({
   // ✅ Selection state for bulk delete
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const selectedCount = selectedKeys.size;
+  const selectableKeys = useMemo(() => {
+    const keys: string[] = [];
+    rows.forEach((r) => {
+      eventCols.forEach((c) => {
+        if (String(r.events[c] || "").trim() !== "") {
+          keys.push(makeKey(r.dateISO, c));
+        }
+      });
+    });
+    return keys;
+  }, [rows, eventCols]);
+  const totalSelectable = selectableKeys.length;
+  const allSelected = totalSelectable > 0 && selectedCount === totalSelectable;
 
   // ⭐ When rows change (month change / reload), clear drafts and selections
   useEffect(() => {
@@ -116,6 +129,30 @@ export default function EventsGridView({
     });
   }
 
+  function toggleSelectAll(): void {
+    if (!totalSelectable) return;
+    setSelectedKeys((prev) => {
+      const allAlreadySelected =
+        prev.size === totalSelectable &&
+        selectableKeys.every((k) => prev.has(k));
+      if (allAlreadySelected) return new Set();
+      return new Set(selectableKeys);
+    });
+  }
+
+  async function handleDeleteSingle(dateISO: string, col: string): Promise<void> {
+    if (!confirm("Delete this event?")) return;
+    await deleteManyEvents([{ dateISO, col }]);
+
+    const key = makeKey(dateISO, col);
+    setSelectedKeys((prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+  }
+
   async function handleDeleteSelected(): Promise<void> {
     if (!selectedCount) return;
     if (!confirm(`Delete ${selectedCount} selected event(s)?`)) return;
@@ -142,11 +179,26 @@ export default function EventsGridView({
     () => `Delete Selected (${selectedCount})`,
     [selectedCount]
   );
+  const selectAllLabel = useMemo(
+    () =>
+      allSelected
+        ? `Unselect All (${selectedCount})`
+        : "Select All",
+    [allSelected, selectedCount]
+  );
 
   return (
     <div className="h-full flex flex-col">
       {/* Delete Selected Button */}
-      <div className="z-20 flex h-12 items-center justify-end border-b border-slate-200 bg-white px-4">
+      <div className="z-20 flex h-12 items-center justify-end gap-2 border-b border-slate-200 bg-white px-4">
+        <button
+          type="button"
+          onClick={toggleSelectAll}
+          disabled={totalSelectable === 0}
+          className="h-9 min-w-36 rounded-xl border border-slate-300 bg-white px-3 text-center text-xs font-semibold tabular-nums text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 transition"
+        >
+          {selectAllLabel}
+        </button>
         <button
           type="button"
           onClick={() => void handleDeleteSelected()}
@@ -159,13 +211,13 @@ export default function EventsGridView({
 
       {/* Grid Table */}
       <div className="flex-1 overflow-auto">
-        <table className="w-full min-w-[1400px] border-collapse">
+        <table className="w-full min-w-350 border-collapse">
           <thead>
             {/* ✅ GREEN SHEET HEADER */}
             <tr className="sticky top-0 z-20 bg-teal-700">
               <th
                 className="
-                  sticky left-0 z-30 min-w-[160px]
+                  sticky left-0 z-30 min-w-40
                   border border-emerald-950/40
                   px-4 py-3 text-left text-sm font-bold text-white
                   bg-teal-700
@@ -178,7 +230,7 @@ export default function EventsGridView({
                 <th
                   key={c}
                   className="
-                    min-w-[160px]
+                    min-w-40
                     border border-emerald-950/40
                     px-4 py-3 text-left text-sm font-bold text-white
                   "
@@ -233,17 +285,19 @@ export default function EventsGridView({
 
                     return (
                       <td key={c} className="border border-slate-200 p-0">
-                        <div className="relative flex items-center gap-2 px-2">
+                        <div className="group relative flex items-center gap-2 px-2">
                           {/* Checkbox for selection */}
                           {hasEvent && (
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleSelected(r.dateISO, c)}
-                              onClick={(e) => e.stopPropagation()}
-                              className="h-3.5 w-3.5 shrink-0 accent-teal-600"
-                              aria-label={`Select ${c} for ${r.dateISO}`}
-                            />
+                            <>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleSelected(r.dateISO, c)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="h-3.5 w-3.5 shrink-0 accent-teal-600"
+                                aria-label={`Select ${c} for ${r.dateISO}`}
+                              />
+                            </>
                           )}
 
                           {/* Input field */}
@@ -269,11 +323,12 @@ export default function EventsGridView({
                               }
                             }}
                             className={`
-                              w-full h-full px-2 py-3 pr-12
+                              min-w-0 w-full h-full px-2 py-3
                               border-none bg-transparent text-sm
                               focus:outline-none
                               focus:ring-2 focus:ring-inset
                               transition
+                              ${dirty ? "pr-12" : "pr-2"}
                               ${
                                 isImportant
                                   ? "text-rose-800 font-semibold focus:bg-rose-50 focus:ring-rose-500/60"
@@ -283,13 +338,24 @@ export default function EventsGridView({
                             placeholder=""
                           />
 
+                          {hasEvent && (
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteSingle(r.dateISO, c)}
+                              className="h-6 w-6 shrink-0 rounded-md border border-red-200 bg-red-50 text-[11px] font-bold leading-none text-red-700 opacity-0 transition hover:bg-red-100 group-hover:opacity-100 focus:opacity-100"
+                              title="Delete event"
+                            >
+                              X
+                            </button>
+                          )}
+
                           {/* Save button when dirty */}
                           {dirty && (
                             <button
                               type="button"
                               onClick={() => commit(r, c)}
                               className="
-                                absolute right-2 top-1/2 -translate-y-1/2
+                                absolute right-10 top-1/2 -translate-y-1/2
                                 h-7 w-7 rounded-md
                                 bg-emerald-600 text-white font-bold
                                 hover:bg-emerald-700 transition
@@ -314,3 +380,4 @@ export default function EventsGridView({
     </div>
   );
 }
+

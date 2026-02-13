@@ -8,11 +8,13 @@ import {
   MAX_YEAR,
   mergeImportedIntoMonth,
   MIN_YEAR,
+  normalizeIncomingRow,
+  parseAnyDateToISO,
   parseCSV,
   parseTSV,
   sortEventColumns,
 } from "../calendar/calendarUtils";
-import type { MonthRow, Session, ViewType } from "../calendar/types";
+import type { MonthRow, ParsedRow, Session, ViewType } from "../calendar/types";
 import DateBar from "../layout/DateBar";
 import Sidebar from "../layout/Sidebar";
 import TopBar from "../layout/TopBar";
@@ -153,12 +155,17 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
   }, [rows]);
 
   const allEventCols = useMemo(() => {
-    const cols: string[] = [];
+    const cols = new Set<string>();
     rows.forEach((r) => {
-      cols.push(...Object.keys(r.events));
+      Object.keys(r.events).forEach((c) => cols.add(c));
     });
-    const sorted = sortEventColumns(cols);
-    return sorted.length ? sorted : ["Event 1"];
+
+    // Keep a stable baseline of Event 1..Event 10.
+    for (let i = 1; i <= 10; i++) {
+      cols.add(`Event ${i}`);
+    }
+
+    return sortEventColumns(Array.from(cols));
   }, [rows]);
 
   const calendarWeeks = useMemo(
@@ -233,26 +240,43 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     setRows(buildMonthRows(year, monthIndex));
   }
 
-  async function bulkUpload(rowsToUpload: MonthRow[]) {
-    const payload = {
-      year,
-      month: monthIndex + 1,
-      rows: rowsToUpload.map((r) => ({
-        dateISO: r.dateISO,
-        events: Object.fromEntries(
-          Object.entries(r.events).filter(([, v]) => v && v.trim() !== "")
-        ),
-      })),
-    };
+  async function uploadImportedRows(importedRows: ParsedRow[]): Promise<number> {
+    const updates = new Map<string, { dateISO: string; eventCol: number; value: string }>();
 
-    await fetch("https://backend-m7hv.onrender.com/events/bulk", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${session.token}`,
-      },
-      body: JSON.stringify(payload),
+    importedRows.forEach((raw) => {
+      const row = normalizeIncomingRow(raw);
+      const dateISO = parseAnyDateToISO(row.Date, year, monthIndex);
+      if (!dateISO) return;
+
+      Object.entries(row).forEach(([key, rawValue]) => {
+        if (String(key).trim().toLowerCase() === "date") return;
+        const eventCol = getEventColumnNumber(key);
+        const value = String(rawValue || "").trim();
+        if (!eventCol || !value) return;
+        updates.set(`${dateISO}__${eventCol}`, { dateISO, eventCol, value });
+      });
     });
+
+    if (!updates.size) return 0;
+
+    const responses = await Promise.all(
+      Array.from(updates.values()).map((item) =>
+        fetch("https://backend-m7hv.onrender.com/events/cell", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.token}`,
+          },
+          body: JSON.stringify(item),
+        })
+      )
+    );
+
+    if (responses.some((res) => !res.ok)) {
+      throw new Error("Some events failed to upload.");
+    }
+
+    return updates.size;
   }
 
   async function applyPaste(): Promise<void> {
@@ -272,7 +296,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     setRows(merged);
     setPasteText("");
 
-    await bulkUpload(merged);
+    await uploadImportedRows(incoming);
 
     alert("Imported & saved successfully!");
     setShowImportModal(false);
@@ -295,7 +319,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     const merged = mergeImportedIntoMonth(rows, incoming, year, monthIndex);
 
     setRows(merged);
-    await bulkUpload(merged);
+    await uploadImportedRows(incoming);
     alert("CSV imported & saved!");
 
     if (fileRef.current) fileRef.current.value = "";
@@ -395,6 +419,23 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       return;
     }
 
+    setShowEventModal(false);
+  }
+
+  function deleteEventFromModal() {
+    if (modalMode !== "edit") {
+      setShowEventModal(false);
+      return;
+    }
+
+    if (editingEventIndex === null) {
+      setShowEventModal(false);
+      return;
+    }
+
+    if (!confirm("Delete this event?")) return;
+    const col = getColumnForEventIndex(editingDate, editingEventIndex);
+    updateCell(editingDate, col, "");
     setShowEventModal(false);
   }
 
@@ -658,6 +699,14 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
             </div>
 
             <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-2">
+              {modalMode === "edit" && (
+                <button
+                  onClick={deleteEventFromModal}
+                  className="px-4 h-10 bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold transition"
+                >
+                  Delete
+                </button>
+              )}
               <button
                 onClick={() => setShowEventModal(false)}
                 className="px-4 h-10 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 transition"
@@ -699,7 +748,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
                   value={pasteText}
                   onChange={(e) => setPasteText(e.target.value)}
                   placeholder="Paste copied table from Google Sheets (Date + Event 1..Event 10)"
-                  className="w-full min-h-[160px] px-3 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm resize-y"
+                  className="w-full min-h-40 px-3 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm resize-y"
                 />
 
                 <div className="mt-3 flex gap-2">
