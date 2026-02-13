@@ -29,6 +29,11 @@ interface DashboardProps {
 
 type ModalMode = "add" | "edit";
 
+type EventCellRef = {
+  dateISO: string;
+  col: string;
+};
+
 export default function Dashboard({ session, onLogout }: DashboardProps) {
   const now = new Date();
   const safeYear = Math.min(Math.max(now.getFullYear(), MIN_YEAR), MAX_YEAR);
@@ -184,11 +189,16 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     if (!eventCol) return;
 
     setRows((prev) =>
-      prev.map((r) =>
-        r.dateISO === dateISO
-          ? { ...r, events: { ...r.events, [col]: value } }
-          : r
-      )
+      prev.map((r) => {
+        if (r.dateISO !== dateISO) return r;
+        const nextEvents = { ...r.events };
+        if (String(value || "").trim() === "") {
+          delete nextEvents[col];
+        } else {
+          nextEvents[col] = value;
+        }
+        return { ...r, events: nextEvents };
+      })
     );
 
     await fetch("https://backend-m7hv.onrender.com/events/cell", {
@@ -388,6 +398,44 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     setShowEventModal(false);
   }
 
+  // ⭐ NEW: Delete multiple events
+  async function deleteManyEvents(items: EventCellRef[]): Promise<void> {
+    const normalized = items
+      .map((item) => {
+        const eventCol = getEventColumnNumber(item.col);
+        return eventCol ? { dateISO: item.dateISO, eventCol, col: item.col } : null;
+      })
+      .filter((x): x is { dateISO: string; eventCol: number; col: string } => x !== null);
+
+    if (!normalized.length) return;
+
+    setRows((prev) =>
+      prev.map((r) => {
+        const targets = normalized.filter((item) => item.dateISO === r.dateISO);
+        if (!targets.length) return r;
+        const nextEvents = { ...r.events };
+        targets.forEach((item) => {
+          delete nextEvents[item.col];
+        });
+        return { ...r, events: nextEvents };
+      })
+    );
+
+    await fetch("https://backend-m7hv.onrender.com/events/delete-bulk", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.token}`,
+      },
+      body: JSON.stringify({
+        items: normalized.map((item) => ({
+          dateISO: item.dateISO,
+          eventCol: item.eventCol,
+        })),
+      }),
+    });
+  }
+
   const today = new Date().toISOString().split("T")[0];
   const selectedEvents = eventsByDate.get(selectedDateISO) || [];
 
@@ -562,6 +610,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
                     selectedDateISO={selectedDateISO}
                     setSelectedDateISO={setSelectedDateISO}
                     updateCell={updateCell}
+                    deleteManyEvents={deleteManyEvents}
                     clearMonth={clearMonth}
                   />
                 </div>
